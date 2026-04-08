@@ -139,6 +139,7 @@ class M2kController(QObject):
         self.aout.setCyclic(True)
         self.aout.enableChannel(channel, True)
         self.aout.push(channel, wave)
+        #multicanal
         
     def start_acquisition(self, callback):
         if not self.ctx:
