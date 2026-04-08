@@ -7,7 +7,7 @@ import csv
 from datetime import datetime
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QFileDialog, QSplashScreen, QProgressBar, 
-                             QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox)
+                             QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QMessageBox)
 from PyQt6.QtGui import QIcon, QPixmap, QFont
 from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
@@ -424,12 +424,10 @@ class OscilloscopeApp:
             self.is_running = False
             self.ui.btn_run_stop.setText("En Pause (Cliquer pour Reprendre)")
             self.ui.btn_run_stop.setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; padding: 10px;")
-            self.ui.btn_export.setEnabled(True)
         else:
             self.is_running = True
             self.ui.btn_run_stop.setText("En cours (Cliquer pour mettre en Pause)")
             self.ui.btn_run_stop.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")
-            self.ui.btn_export.setEnabled(False)
 
     def on_new_data(self, new_data):
         if not self.is_running:
@@ -723,6 +721,10 @@ class OscilloscopeApp:
             self.ui.btn_color_line.setStyleSheet(f"background-color: {self.ui.line_color}; color: {text_col}; border: 1px solid gray;")
 
     def export_graph(self):
+        if self.is_running:
+            QMessageBox.warning(self.ui, "Attention", "Veuillez mettre la simulation en pause avant d'exporter le graphique.")
+            return
+
         # 0. Demander les titres et noms d'axes via une boîte de dialogue
         # Récupérer les labels actuels (en enlevant potentiellement du HTML)
         current_title = "Analyseur de Signaux ADALM2000"

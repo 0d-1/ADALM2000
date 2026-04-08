@@ -299,7 +299,6 @@ class OscilloscopeUI(QWidget):
         
         self.btn_export = QPushButton("Exporter le Graphique")
         self.btn_export.setStyleSheet("background-color: #0275d8; color: white; font-weight: bold; padding: 5px;")
-        self.btn_export.setEnabled(False) # Activé seulement si en pause
         self.btn_export.setToolTip("Mettez l'oscilloscope en Pause pour exporter")
         layout_export.addWidget(self.btn_export)
         
