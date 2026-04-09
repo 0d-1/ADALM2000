@@ -1,3 +1,7 @@
+"""
+ADALM2000 Laboratory - UI Module
+© 2024-2026 Odin De Baerdemaker - Tous droits réservés
+"""
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QGroupBox, QDoubleSpinBox, QTabWidget, QCheckBox, 
@@ -105,6 +109,12 @@ class OscilloscopeUI(QWidget):
         self.splitter.setStretchFactor(1, 1)
         
         main_layout.addWidget(self.splitter)
+        
+        # --- Pied de page (Copyright) ---
+        self.lbl_copyright = QLabel("© 2024-2026 Odin De Baerdemaker - Tous droits réservés")
+        self.lbl_copyright.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.lbl_copyright.setStyleSheet("color: #666; font-size: 10px; padding-right: 5px; margin-top: 2px;")
+        main_layout.addWidget(self.lbl_copyright)
         
     def setup_oscilloscope_tab(self):
         scroll_area = QScrollArea()

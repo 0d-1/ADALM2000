@@ -1,3 +1,7 @@
+"""
+ADALM2000 Laboratory - Oscilloscope Application
+© 2024-2026 Odin De Baerdemaker - Tous droits réservés
+"""
 import sys
 import os
 import time

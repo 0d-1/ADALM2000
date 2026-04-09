@@ -1,3 +1,7 @@
+"""
+ADALM2000 Controller Module
+© 2024-2026 Odin De Baerdemaker - Tous droits réservés
+"""
 import libm2k
 import numpy as np
 import time

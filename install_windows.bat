@@ -1,8 +1,10 @@
 @echo off
+REM Copyright © 2024-2026 Odin De Baerdemaker - Tous droits réservés
 setlocal EnableDelayedExpansion
 
 REM ====================================================================
 REM   ADALM2000 Laboratory - Installateur Windows
+REM   Copyright © 2024-2026 Odin De Baerdemaker - Tous droits réservés
 REM   Ce script installe toutes les dependances necessaires pour
 REM   faire tourner l'oscilloscope ADALM2000 sous Windows.
 REM ====================================================================

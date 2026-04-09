@@ -1,4 +1,5 @@
 #!/bin/bash
+# Copyright © 2024-2026 Odin De Baerdemaker - Tous droits réservés
 # ====================================================================
 #   ADALM2000 Laboratory - Installateur macOS
 #   Ce script installe toutes les dépendances nécessaires pour

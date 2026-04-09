@@ -90,4 +90,6 @@ La librairie `libm2k` d'Analog Devices est parfois complexe à installer via pip
 *   Désactivez les onglets XY ou Math s'ils ne sont pas utilisés.
 
 **Les mesures du voltmètre bougent beaucoup alors que rien n'est branché ("Bruit")**
-*   C'est normal, les entrées de l'ADALM2000 sont très sensibles ("flottantes"). Mettez une résistance pour forcer à 0V (Pull-down) ou reliez CH1/CH2 à la masse (GND). Vous pouvez aussi activer l'option "Anti-Bruit (Squelch)" dans l'onglet Voltmètre.
+
+---
+© 2024-2026 **Odin De Baerdemaker** - Tous droits réservés.
