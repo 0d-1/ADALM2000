@@ -17,12 +17,15 @@ class OscilloscopeUI(QWidget):
     def init_ui(self):
         self.setWindowTitle("SCODIN - ADALM2000 Pro Station")
         self.resize(1200, 800)
+        self.setStyleSheet("background-color: #121212; color: #e0e0e0;")
         
         pg.setConfigOption('background', 'k')
         pg.setConfigOption('foreground', 'd')
         pg.setConfigOptions(useOpenGL=True, antialias=False)
         
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
         
         # --- Splitter Principal ---
         self.splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -105,16 +108,17 @@ class OscilloscopeUI(QWidget):
         
         self.splitter.addWidget(self.graph_container)
         self.splitter.addWidget(self.tabs)
-        self.splitter.setStretchFactor(0, 4)
-        self.splitter.setStretchFactor(1, 1)
         
-        main_layout.addWidget(self.splitter)
+        # Définir la largeur du panneau de droite à 360px (1200 - 360 = 840)
+        self.splitter.setSizes([840, 360])
+        
+        main_layout.addWidget(self.splitter, 1)
         
         # --- Pied de page (Copyright) ---
         self.lbl_copyright = QLabel("© 2024-2026 Odin De Baerdemaker - Tous droits réservés")
         self.lbl_copyright.setAlignment(Qt.AlignmentFlag.AlignRight)
-        self.lbl_copyright.setStyleSheet("color: #666; font-size: 10px; padding-right: 5px; margin-top: 2px;")
-        main_layout.addWidget(self.lbl_copyright)
+        self.lbl_copyright.setStyleSheet("color: #444; font-size: 9px; padding: 2px 10px; background-color: #121212;")
+        main_layout.addWidget(self.lbl_copyright, 0)
         
     def setup_oscilloscope_tab(self):
         scroll_area = QScrollArea()
