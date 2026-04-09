@@ -10,6 +10,7 @@ Ce logiciel vise à remplacer l'utilisation de scripts basiques par une interfac
 *   **Contrôle Avancé des Sondes** : Support des sondes x1, x10, x100, couplage AC logiciel, et calibrage automatique du Zéro (DC Offset compensation).
 *   **Déclenchement (Trigger)** : Trigger logiciel avec hystérésis paramétrable pour stabiliser les signaux périodiques.
 *   **Générateur de Signaux (AWG)** : Contrôle des deux sorties analogiques (W1, W2) pour générer des signaux sinus, carrés, triangles, ou des impulsions personnalisées (ex: signaux à base de BPM).
+*   **🤖 Génération assistée par IA** : Discutez avec une intelligence artificielle (Groq / Llama 3.3) pour décrire n'importe quel signal complexe en langage naturel, le prévisualiser et l'appliquer directement sur le matériel.
 *   **Analyseur de Spectre (FFT)** : Calcul et affichage en temps réel de la transformée de Fourier, y compris sur des régions ciblées du graphe (ROI - *Region of Interest*).
 *   **Outils de Mesure** :
     *   Curseurs Verticaux (Temps/Fréquence) et Horizontaux (Tension) pour des mesures précises sur le graphe.
@@ -70,7 +71,8 @@ L'interface est divisée en plusieurs panneaux et onglets :
     *   **Réglages CH1 / CH2** : Activez ou désactivez les canaux. Ajustez les V/Div (échelle verticale), l'Offset (position), et l'épaisseur du trait.
 2.  **Zone Graphique (Centre)** : Affiche les signaux. Faites clic droit -> "Analyse Graphe" pour ajouter des curseurs de mesure.
 3.  **Panneau d'Onglets (Droite)** :
-    *   **Générateur** : Configurez les signaux de sortie pour W1 et W2.
+    *   **Générateurs** : Configurez les signaux de sortie pour W1 et W2.
+    *   **🤖 IA** : Décrivez un signal en langage naturel et l'IA (Groq / Llama 3.3) le programmera pour vous. Clé API gratuite requise ([console.groq.com](https://console.groq.com/keys)).
     *   **Spectre (FFT)** : Activez la vue fréquentielle.
     *   **XY (Lissajous)** : Affiche CH1 en fonction de CH2.
     *   **Math** : Appliquez des opérations entre CH1 et CH2.

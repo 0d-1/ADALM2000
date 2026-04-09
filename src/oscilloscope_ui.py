@@ -5,7 +5,8 @@ ADALM2000 Laboratory - UI Module
 import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QGroupBox, QDoubleSpinBox, QTabWidget, QCheckBox, 
-                             QScrollArea, QComboBox, QSplitter, QToolButton, QMenu)
+                             QScrollArea, QComboBox, QSplitter, QToolButton, QMenu, QLineEdit,
+                             QTextEdit, QFrame)
 from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtCore import Qt, QPoint
 
@@ -87,10 +88,12 @@ class OscilloscopeUI(QWidget):
         self.tab_math = QWidget()
         self.tab_voltmeter = QWidget()
         self.tab_logger = QWidget()
+        self.tab_ai = QWidget()
         
         self.tabs.addTab(self.tab_osc, "Oscillo")
         self.tabs.addTab(self.tab_gen, "Générateur W1")
         self.tabs.addTab(self.tab_custom_gen, "Générateurs W1/W2")
+        self.tabs.addTab(self.tab_ai, "🤖 IA")
         self.tabs.addTab(self.tab_spectrum, "Spectre")
         self.tabs.addTab(self.tab_xy, "Vue XY")
         self.tabs.addTab(self.tab_math, "Math & Réf")
@@ -105,6 +108,7 @@ class OscilloscopeUI(QWidget):
         self.setup_math_tab()
         self.setup_voltmeter_tab()
         self.setup_logger_tab()
+        self.setup_ai_tab()
         
         self.splitter.addWidget(self.graph_container)
         self.splitter.addWidget(self.tabs)
@@ -629,3 +633,347 @@ class OscilloscopeUI(QWidget):
         group_log.setLayout(l_log)
         layout.addWidget(group_log)
         layout.addStretch(1)
+
+    def setup_ai_tab(self):
+        """Configure l'onglet IA : chat, prévisualisation et contrôles."""
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
+        layout.setSpacing(8)
+        
+        # === GROUPE : Configuration API ===
+        group_api = QGroupBox("🔑 Configuration IA")
+        group_api.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #5bc0de;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #5bc0de;
+            }
+        """)
+        l_api = QVBoxLayout()
+        
+        h_api_key = QHBoxLayout()
+        h_api_key.addWidget(QLabel("Clé API Groq (gratuite) :"))
+        self.txt_api_key = QLineEdit()
+        self.txt_api_key.setPlaceholderText("gsk_...")
+        self.txt_api_key.setEchoMode(QLineEdit.EchoMode.Password)
+        self.txt_api_key.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1a2e;
+                border: 1px solid #333;
+                border-radius: 4px;
+                padding: 6px;
+                color: #e0e0e0;
+                font-family: 'Consolas', 'Courier New', monospace;
+            }
+            QLineEdit:focus {
+                border-color: #5bc0de;
+            }
+        """)
+        h_api_key.addWidget(self.txt_api_key)
+        l_api.addLayout(h_api_key)
+        
+        lbl_guide = QLabel('<a href="https://console.groq.com/keys" style="color: #5bc0de; font-size: 11px;">➜ Obtenir une clé API gratuite sur console.groq.com</a>')
+        lbl_guide.setOpenExternalLinks(True)
+        lbl_guide.setAlignment(Qt.AlignmentFlag.AlignRight)
+        l_api.addWidget(lbl_guide)
+        
+        h_duration = QHBoxLayout()
+        h_duration.addWidget(QLabel("Durée du signal (s) :"))
+        self.spin_ai_duration = QDoubleSpinBox()
+        self.spin_ai_duration.setRange(0.001, 1.0)
+        self.spin_ai_duration.setDecimals(3)
+        self.spin_ai_duration.setValue(0.01)
+        self.spin_ai_duration.setSingleStep(0.001)
+        self.spin_ai_duration.setSuffix(" s")
+        h_duration.addWidget(self.spin_ai_duration)
+        l_api.addLayout(h_duration)
+        
+        group_api.setLayout(l_api)
+        layout.addWidget(group_api)
+        
+        # === ZONE DE CHAT ===
+        group_chat = QGroupBox("💬 Conversation")
+        group_chat.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #444;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #aaa;
+            }
+        """)
+        l_chat = QVBoxLayout()
+        
+        self.txt_ai_chat = QTextEdit()
+        self.txt_ai_chat.setReadOnly(True)
+        self.txt_ai_chat.setMinimumHeight(140)
+        self.txt_ai_chat.setMaximumHeight(200)
+        self.txt_ai_chat.setStyleSheet("""
+            QTextEdit {
+                background-color: #0a0a1a;
+                border: 1px solid #222;
+                border-radius: 6px;
+                padding: 8px;
+                color: #e0e0e0;
+                font-size: 12px;
+                font-family: 'Segoe UI', sans-serif;
+            }
+        """)
+        self.txt_ai_chat.setHtml(
+            '<p style="color: #666; font-style: italic;">'
+            'Décrivez le signal que vous souhaitez générer...<br>'
+            'Exemples : "Sinusoïde 1kHz amplitude 2V", '
+            '"Signal carré 500Hz", "Chirp de 100Hz à 5kHz"</p>'
+        )
+        l_chat.addWidget(self.txt_ai_chat)
+        
+        # Champ de saisie + bouton envoyer
+        h_input = QHBoxLayout()
+        self.txt_ai_input = QLineEdit()
+        self.txt_ai_input.setPlaceholderText("Décrivez votre signal ici...")
+        self.txt_ai_input.setStyleSheet("""
+            QLineEdit {
+                background-color: #1a1a2e;
+                border: 2px solid #333;
+                border-radius: 8px;
+                padding: 8px 12px;
+                color: #e0e0e0;
+                font-size: 13px;
+            }
+            QLineEdit:focus {
+                border-color: #5bc0de;
+                background-color: #1e1e3a;
+            }
+        """)
+        h_input.addWidget(self.txt_ai_input, stretch=3)
+        
+        self.btn_ai_send = QPushButton("⚡ Générer")
+        self.btn_ai_send.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5bc0de, stop:1 #3a9fc1);
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 8px 16px;
+                border: none;
+                border-radius: 8px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #6dd0ee, stop:1 #4aafcd);
+            }
+            QPushButton:pressed {
+                background: #2a8faa;
+            }
+        """)
+        h_input.addWidget(self.btn_ai_send)
+        l_chat.addLayout(h_input)
+        
+        self.btn_ai_clear = QPushButton("🗑 Effacer conversation")
+        self.btn_ai_clear.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #888;
+                border: 1px solid #333;
+                border-radius: 4px;
+                padding: 4px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                color: #d9534f;
+                border-color: #d9534f;
+            }
+        """)
+        l_chat.addWidget(self.btn_ai_clear)
+        
+        group_chat.setLayout(l_chat)
+        layout.addWidget(group_chat)
+        
+        # === PRÉVISUALISATION DU SIGNAL ===
+        group_preview = QGroupBox("📊 Prévisualisation du Signal")
+        group_preview.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #5cb85c;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #5cb85c;
+            }
+        """)
+        l_preview = QVBoxLayout()
+        
+        h_preview_tools = QHBoxLayout()
+        h_preview_tools.addWidget(QLabel("Échelle de temps vue (s) :"))
+        self.spin_ai_preview_scale = QDoubleSpinBox()
+        self.spin_ai_preview_scale.setRange(0.0001, 10.0)
+        self.spin_ai_preview_scale.setDecimals(4)
+        self.spin_ai_preview_scale.setValue(0.01)
+        self.spin_ai_preview_scale.setSingleStep(0.001)
+        # On va l'associer ensuite dans main_oscilloscope
+        h_preview_tools.addWidget(self.spin_ai_preview_scale)
+        h_preview_tools.addStretch(1)
+        l_preview.addLayout(h_preview_tools)
+        
+        self.ai_preview_plot = pg.PlotWidget()
+        self.ai_preview_plot.setMinimumHeight(160)
+        self.ai_preview_plot.setMaximumHeight(200)
+        self.ai_preview_plot.setLabel('left', 'V')
+        self.ai_preview_plot.setLabel('bottom', 's')
+        self.ai_preview_plot.showGrid(x=True, y=True, alpha=0.2)
+        self.ai_preview_plot.setYRange(-5.5, 5.5)
+        self.ai_preview_curve = self.ai_preview_plot.plot(
+            pen=pg.mkPen('#5bc0de', width=1.5)
+        )
+        l_preview.addWidget(self.ai_preview_plot)
+        
+        # Label code généré (pliable)
+        self.lbl_ai_code = QLabel("")
+        self.lbl_ai_code.setWordWrap(True)
+        self.lbl_ai_code.setStyleSheet("""
+            QLabel {
+                background-color: #111;
+                border: 1px solid #333;
+                border-radius: 4px;
+                padding: 6px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 10px;
+                color: #7fdbca;
+            }
+        """)
+        self.lbl_ai_code.setVisible(False)
+        l_preview.addWidget(self.lbl_ai_code)
+        
+        self.btn_ai_show_code = QPushButton("</> Afficher le code")
+        self.btn_ai_show_code.setCheckable(True)
+        self.btn_ai_show_code.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                color: #7fdbca;
+                border: 1px solid #333;
+                border-radius: 4px;
+                padding: 3px;
+                font-size: 11px;
+                font-family: monospace;
+            }
+            QPushButton:hover {
+                border-color: #7fdbca;
+            }
+            QPushButton:checked {
+                background-color: #1a2a1a;
+                border-color: #7fdbca;
+            }
+        """)
+        self.btn_ai_show_code.clicked.connect(
+            lambda checked: self.lbl_ai_code.setVisible(checked)
+        )
+        l_preview.addWidget(self.btn_ai_show_code)
+        
+        group_preview.setLayout(l_preview)
+        layout.addWidget(group_preview)
+        
+        # === BOUTONS D'APPLICATION ===
+        group_apply = QGroupBox("🎛 Appliquer le Signal")
+        group_apply.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #f0ad4e;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #f0ad4e;
+            }
+        """)
+        l_apply = QVBoxLayout()
+        
+        h_apply_btns = QHBoxLayout()
+        
+        self.btn_ai_apply_w1 = QPushButton("⚡ Appliquer sur W1")
+        self.btn_ai_apply_w1.setEnabled(False)
+        self.btn_ai_apply_w1.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f0ad4e, stop:1 #d4952e);
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 10px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f5bd6e, stop:1 #e0a540);
+            }
+            QPushButton:disabled {
+                background: #333;
+                color: #666;
+            }
+        """)
+        h_apply_btns.addWidget(self.btn_ai_apply_w1)
+        
+        self.btn_ai_apply_w2 = QPushButton("⚡ Appliquer sur W2")
+        self.btn_ai_apply_w2.setEnabled(False)
+        self.btn_ai_apply_w2.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #5cb85c, stop:1 #449d44);
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 10px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #6ec86e, stop:1 #55b055);
+            }
+            QPushButton:disabled {
+                background: #333;
+                color: #666;
+            }
+        """)
+        h_apply_btns.addWidget(self.btn_ai_apply_w2)
+        
+        l_apply.addLayout(h_apply_btns)
+        
+        self.lbl_ai_status = QLabel("En attente d'un signal...")
+        self.lbl_ai_status.setStyleSheet("color: #888; font-style: italic; font-size: 11px; padding: 4px;")
+        self.lbl_ai_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l_apply.addWidget(self.lbl_ai_status)
+        
+        group_apply.setLayout(l_apply)
+        layout.addWidget(group_apply)
+        
+        layout.addStretch(1)
+        scroll_area.setWidget(content_widget)
+        
+        main_tab_layout = QVBoxLayout(self.tab_ai)
+        main_tab_layout.setContentsMargins(0, 0, 0, 0)
+        main_tab_layout.addWidget(scroll_area)

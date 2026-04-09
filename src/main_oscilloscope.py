@@ -18,6 +18,7 @@ import pyqtgraph as pg
 import pyqtgraph.exporters
 from oscilloscope_ui import OscilloscopeUI
 from m2k_controller import M2kController
+from ai_signal_generator import AISignalGenerator
 
 class ExportSettingsDialog(QDialog):
     def __init__(self, parent=None, current_title="", current_x="", current_y=""):
@@ -133,6 +134,11 @@ class OscilloscopeApp:
         
         self.update_pens() # Init des pinceaux
 
+        # --- IA Signal Generator ---
+        self.ai_generator = AISignalGenerator()
+        self.ai_current_signal = None  # Signal numpy en prévisualisation
+        self._load_ai_api_key()  # Charger la clé API depuis config.json
+
         from PyQt6.QtCore import QTimer
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
@@ -163,6 +169,15 @@ class OscilloscopeApp:
         self.ui.action_v_cursors.triggered.connect(self.toggle_v_cursors)
         self.ui.action_h_cursors.triggered.connect(self.toggle_h_cursors)
         self.ui.action_roi_fft.triggered.connect(self.toggle_roi_fft)
+        
+        # Connexions IA
+        self.ui.btn_ai_send.clicked.connect(self.on_ai_send)
+        self.ui.txt_ai_input.returnPressed.connect(self.on_ai_send)
+        self.ui.btn_ai_clear.clicked.connect(self.on_ai_clear)
+        self.ui.btn_ai_apply_w1.clicked.connect(lambda: self.on_ai_apply(0))
+        self.ui.btn_ai_apply_w2.clicked.connect(lambda: self.on_ai_apply(1))
+        self.ui.txt_api_key.editingFinished.connect(self.on_ai_api_key_changed)
+        self.ui.spin_ai_preview_scale.valueChanged.connect(self.update_ai_preview_scale)
         
         # Signaux de mouvement des curseurs
         self.ui.v_cursor1.sigPositionChanged.connect(self.update_cursors_measure)
@@ -542,7 +557,7 @@ class OscilloscopeApp:
             self.ui.curve_ch2.setData(t_display_opt_2, y_display_opt_ch2)
         
         # Mise à jour de l'analyseur de spectre (Toutes les 10 frames si onglet actif)
-        if self.ui.tabs.currentIndex() == 3: # Onglet Spectre
+        if self.ui.tabs.currentIndex() == 4: # Onglet Spectre
             if self.frame_count % 10 == 0:
                 if self.ui.action_roi_fft.isChecked():
                     region = self.ui.roi_fft.getRegion()
@@ -556,18 +571,18 @@ class OscilloscopeApp:
                     self.update_spectrum(y_display_ch1, y_display_ch2)
         
         # Mise à jour du Voltmètre (Toutes les 6 frames si onglet actif)
-        if self.ui.tabs.currentIndex() == 6: # Onglet Voltmeter
+        if self.ui.tabs.currentIndex() == 7: # Onglet Voltmeter
             if self.frame_count % 6 == 0:
                 self.update_voltmeter(y_display_ch1, y_display_ch2)
         
         # Mise à jour de la Vue XY
-        if self.ui.tabs.currentIndex() == 4: # Onglet XY
+        if self.ui.tabs.currentIndex() == 5: # Onglet XY
             # On prend moins de points pour la vue XY pour éviter les lags (ex: 2000 points max)
             skip = max(1, len(y_display_ch1) // 2000)
             self.ui.curve_xy.setData(y_display_ch1[::skip], y_display_ch2[::skip])
 
         # Mise à jour des Math (Uniquement si onglet spécifique actif ou visibles sur le plot principal)
-        if self.ui.tabs.currentIndex() == 5: # Onglet Math
+        if self.ui.tabs.currentIndex() == 6: # Onglet Math
             if self.ui.chk_math_enabled.isChecked():
                 op = self.ui.combo_math_op.currentIndex()
                 if op == 0: math_data = y_display_ch1 + y_display_ch2
@@ -814,6 +829,223 @@ class OscilloscopeApp:
             
         self.controller.disconnect_device()
         sys.exit(exit_code)
+
+    # ======================================================================
+    # === LOGIQUE ONGLET IA ================================================
+    # ======================================================================
+
+    def _load_ai_api_key(self):
+        """Charge la clé API depuis config.json et la pré-remplit dans l'interface."""
+        try:
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r") as f:
+                    config = json.load(f)
+                    key = config.get("groq_api_key", "")
+                    if key:
+                        self.ai_generator.set_api_key(key)
+                        self.ui.txt_api_key.setText(key)
+        except Exception:
+            pass
+
+    def on_ai_api_key_changed(self):
+        """Sauvegarde la clé API dans config.json quand l'utilisateur la modifie."""
+        key = self.ui.txt_api_key.text().strip()
+        self.ai_generator.set_api_key(key)
+        
+        # Sauvegarder dans config.json
+        try:
+            config = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r") as f:
+                    config = json.load(f)
+            config["groq_api_key"] = key
+            with open(self.config_file, "w") as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            print(f"Erreur sauvegarde clé API : {e}")
+
+    def on_ai_send(self):
+        """Envoie le prompt utilisateur à l'IA et affiche le résultat."""
+        prompt = self.ui.txt_ai_input.text().strip()
+        if not prompt:
+            return
+        
+        # Afficher le message utilisateur dans le chat
+        self._ai_append_chat("user", prompt)
+        self.ui.txt_ai_input.clear()
+        
+        # Désactiver le bouton pendant le traitement
+        self.ui.btn_ai_send.setEnabled(False)
+        self.ui.btn_ai_send.setText("⏳ Analyse...")
+        self.ui.lbl_ai_status.setText("Envoi de la requête à l'IA...")
+        self.ui.lbl_ai_status.setStyleSheet("color: #5bc0de; font-style: italic; font-size: 11px; padding: 4px;")
+        self.app.processEvents()
+        
+        # Appel IA (bloquant — dans un thread serait mieux mais simple pour l'instant)
+        duration = self.ui.spin_ai_duration.value()
+        sample_rate = self.controller.sample_rate
+        
+        result = self.ai_generator.generate_signal(prompt, sample_rate, duration)
+        
+        # Réactiver le bouton
+        self.ui.btn_ai_send.setEnabled(True)
+        self.ui.btn_ai_send.setText("⚡ Générer")
+        
+        if result['success']:
+            # Afficher la réponse IA
+            self._ai_append_chat("ai", result['explanation'])
+            
+            # Mettre à jour le code affiché
+            self.ui.lbl_ai_code.setText(result['code'])
+            
+            # Stocker le signal et mettre à jour la prévisualisation
+            self.ai_current_signal = result['signal']
+            n = len(self.ai_current_signal)
+            
+            # Récupération de la durée calculée automatiquement par l'IA
+            duration = result.get('duration', duration)
+            
+            # Mise à jour du paramètre Durée du signal (pour info à l'utilisateur)
+            self.ui.spin_ai_duration.blockSignals(True)
+            self.ui.spin_ai_duration.setValue(duration)
+            self.ui.spin_ai_duration.blockSignals(False)
+            
+            # Mise à jour de l'échelle de vue
+            self.ui.spin_ai_preview_scale.blockSignals(True)
+            self.ui.spin_ai_preview_scale.setValue(duration)
+            self.ui.spin_ai_preview_scale.blockSignals(False)
+            
+            self.update_ai_preview_scale()
+            
+            # Auto-range Y
+            y_max = max(abs(self.ai_current_signal.min()), abs(self.ai_current_signal.max()), 0.1)
+            self.ui.ai_preview_plot.setYRange(-y_max * 1.1, y_max * 1.1)
+            
+            # Activer les boutons d'application
+            self.ui.btn_ai_apply_w1.setEnabled(True)
+            self.ui.btn_ai_apply_w2.setEnabled(True)
+            self.ui.lbl_ai_status.setText(f"✅ Signal généré ({n} échantillons, {duration*1000:.1f} ms)")
+            self.ui.lbl_ai_status.setStyleSheet("color: #5cb85c; font-style: normal; font-size: 11px; padding: 4px;")
+        else:
+            # Afficher l'erreur
+            self._ai_append_chat("error", result['error'])
+            
+            # S'il y a du code et une erreur d'exécution, montrer le code
+            if result['code']:
+                self.ui.lbl_ai_code.setText(result['code'])
+            
+            self.ui.lbl_ai_status.setText("❌ Erreur de génération")
+            self.ui.lbl_ai_status.setStyleSheet("color: #d9534f; font-style: normal; font-size: 11px; padding: 4px;")
+
+    def on_ai_clear(self):
+        """Efface l'historique de conversation et réinitialise l'onglet IA."""
+        self.ai_generator.clear_history()
+        self.ai_current_signal = None
+        self.ui.txt_ai_chat.setHtml(
+            '<p style="color: #666; font-style: italic;">'
+            'Décrivez le signal que vous souhaitez générer...<br>'
+            'Exemples : "Sinusoïde 1kHz amplitude 2V", '
+            '"Signal carré 500Hz", "Chirp de 100Hz à 5kHz"</p>'
+        )
+        self.ui.ai_preview_curve.setData([], [])
+        self.ui.lbl_ai_code.setText("")
+        self.ui.btn_ai_apply_w1.setEnabled(False)
+        self.ui.btn_ai_apply_w2.setEnabled(False)
+        self.ui.lbl_ai_status.setText("En attente d'un signal...")
+        self.ui.lbl_ai_status.setStyleSheet("color: #888; font-style: italic; font-size: 11px; padding: 4px;")
+
+    def update_ai_preview_scale(self):
+        if self.ai_current_signal is None:
+            return
+            
+        scale = self.ui.spin_ai_preview_scale.value()
+        duration = self.ui.spin_ai_duration.value()
+        n = len(self.ai_current_signal)
+        
+        n_view = int((scale / duration) * n)
+        if n_view <= 0: return
+        
+        # Le signal généré par l'IA sera joué de manière cyclique. 
+        # On répète donc le tableau si la vue est plus grande que la durée initiale du burst.
+        if n_view > n:
+            repeats = int(np.ceil(n_view / n))
+            sig_view = np.tile(self.ai_current_signal, repeats)[:n_view]
+        else:
+            sig_view = self.ai_current_signal[:n_view]
+            
+        max_display = 4000
+        if len(sig_view) > max_display:
+            sig_view_opt = self.fast_downsample(sig_view, max_display)
+            t_view_opt = np.linspace(0, scale, len(sig_view_opt), endpoint=False)
+            self.ui.ai_preview_curve.setData(t_view_opt, sig_view_opt)
+        else:
+            t_view = np.linspace(0, scale, n_view, endpoint=False)
+            self.ui.ai_preview_curve.setData(t_view, sig_view)
+            
+        self.ui.ai_preview_plot.setXRange(0, scale, padding=0)
+
+    def on_ai_apply(self, channel):
+        """Envoie le signal IA prévisualisé sur W1 (channel=0) ou W2 (channel=1)."""
+        if self.ai_current_signal is None:
+            return
+        
+        try:
+            self.controller.push_raw_waveform(channel, self.ai_current_signal)
+            ch_name = "W1" if channel == 0 else "W2"
+            self.ui.lbl_ai_status.setText(f"✅ Signal appliqué sur {ch_name} !")
+            self.ui.lbl_ai_status.setStyleSheet("color: #5cb85c; font-weight: bold; font-size: 11px; padding: 4px;")
+            self._ai_append_chat("system", f"Signal envoyé sur la sortie {ch_name}.")
+        except Exception as e:
+            self.ui.lbl_ai_status.setText(f"❌ Erreur : {str(e)[:60]}")
+            self.ui.lbl_ai_status.setStyleSheet("color: #d9534f; font-size: 11px; padding: 4px;")
+            self._ai_append_chat("error", f"Impossible d'envoyer le signal : {e}")
+
+    def _ai_append_chat(self, role, text):
+        """Ajoute un message au chat IA avec mise en forme HTML."""
+        html = self.ui.txt_ai_chat.toHtml()
+        
+        # Retirer le message d'accueil initial si encore présent
+        if 'Décrivez le signal que vous souhaitez' in html and role == 'user':
+            html = ''
+        
+        if role == "user":
+            bubble = (
+                f'<div style="margin: 6px 0; padding: 8px 12px; '
+                f'background-color: #1a2a4a; border-radius: 10px; '
+                f'border-left: 3px solid #5bc0de;">'
+                f'<b style="color: #5bc0de;">🧑 Vous :</b><br>'
+                f'<span style="color: #e0e0e0;">{text}</span></div>'
+            )
+        elif role == "ai":
+            bubble = (
+                f'<div style="margin: 6px 0; padding: 8px 12px; '
+                f'background-color: #1a2a1a; border-radius: 10px; '
+                f'border-left: 3px solid #5cb85c;">'
+                f'<b style="color: #5cb85c;">🤖 IA :</b><br>'
+                f'<span style="color: #c0e0c0;">{text}</span></div>'
+            )
+        elif role == "system":
+            bubble = (
+                f'<div style="margin: 4px 0; padding: 6px 10px; '
+                f'border-left: 3px solid #f0ad4e;">'
+                f'<span style="color: #f0ad4e; font-size: 11px;">⚙️ {text}</span></div>'
+            )
+        elif role == "error":
+            bubble = (
+                f'<div style="margin: 6px 0; padding: 8px 12px; '
+                f'background-color: #2a1a1a; border-radius: 10px; '
+                f'border-left: 3px solid #d9534f;">'
+                f'<b style="color: #d9534f;">⚠️ Erreur :</b><br>'
+                f'<span style="color: #ff9999;">{text}</span></div>'
+            )
+        else:
+            bubble = f'<p>{text}</p>'
+        
+        self.ui.txt_ai_chat.append(bubble)
+        
+        # Auto-scroll vers le bas
+        scrollbar = self.ui.txt_ai_chat.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
 if __name__ == '__main__':
     app = OscilloscopeApp()

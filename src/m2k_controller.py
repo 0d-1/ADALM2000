@@ -138,6 +138,17 @@ class M2kController(QObject):
         self.aout.setCyclic(True)
         self.aout.enableChannel(channel, True)
         self.aout.push(channel, wave)
+
+    def push_raw_waveform(self, channel, wave_array):
+        """Envoie un tableau numpy brut sur la sortie W1 (channel=0) ou W2 (channel=1)."""
+        if not self.ctx:
+            raise ConnectionError("ADALM2000 non connecté. Impossible d'envoyer le signal.")
+        
+        self.aout.setSampleRate(channel, self.sample_rate)
+        self.aout.setCyclic(True)
+        self.aout.enableChannel(channel, True)
+        self.aout.push(channel, wave_array)
+        print(f"M2kController: Signal IA poussé sur W{channel+1} ({len(wave_array)} échantillons)")
         
     def start_acquisition(self, callback):
         if not self.ctx:

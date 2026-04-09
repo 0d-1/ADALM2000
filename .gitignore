@@ -1,0 +1,19 @@
+# User configuration
+src/config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Distribution / packages
+dist/
+build/
+*.egg-info/
