@@ -40,7 +40,7 @@ check_status() {
 # ====================================================================
 # ÉTAPE 1 : Vérifier Homebrew
 # ====================================================================
-echo -e "${BOLD}[1/7] Vérification de Homebrew...${NC}"
+echo -e "${BOLD}[1/8] Vérification de Homebrew...${NC}"
 if ! command -v brew &> /dev/null; then
     echo -e "  ${YELLOW}Homebrew n'est pas installé. Installation en cours...${NC}"
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -55,29 +55,75 @@ echo -e "  ${GREEN}[OK]${NC} Homebrew est disponible."
 echo ""
 
 # ====================================================================
-# ÉTAPE 2 : Vérifier Python 3
+# ÉTAPE 2 : Vérification de Python 3
 # ====================================================================
-echo -e "${BOLD}[2/7] Vérification de Python 3...${NC}"
-if ! command -v python3 &> /dev/null; then
-    echo -e "  ${YELLOW}Python 3 n'est pas installé. Installation via Homebrew...${NC}"
-    brew install python@3
+echo -e "${BOLD}[2/8] Vérification de Python 3...${NC}"
+
+PY=""
+
+# 1. Vérifier via le PATH (inclut Homebrew si déjà configuré)
+if command -v python3 &> /dev/null; then
+    PY="python3"
+elif command -v python &> /dev/null; then
+    if python --version 2>&1 | grep -q "Python 3"; then
+        PY="python"
+    fi
 fi
-PYTHON_VER=$(python3 --version 2>&1)
-echo -e "  ${GREEN}[OK]${NC} $PYTHON_VER détecté."
+
+# 2. Si non trouvé, vérifier les chemins d'installation standards sur macOS
+if [ -z "$PY" ]; then
+    COMMON_PATHS=(
+        "/opt/homebrew/bin/python3"
+        "/usr/local/bin/python3"
+        "/usr/bin/python3"
+        "$HOME/anaconda3/bin/python"
+        "$HOME/miniconda3/bin/python"
+        "$HOME/opt/anaconda3/bin/python"
+        "$HOME/opt/miniconda3/bin/python"
+    )
+    
+    for path in "${COMMON_PATHS[@]}"; do
+        if [ -x "$path" ]; then
+            if "$path" --version 2>&1 | grep -q "Python 3"; then
+                PY="$path"
+                echo -e "  [OK] Python trouve dans $path"
+                break
+            fi
+        fi
+    done
+fi
+
+# 3. Si toujours rien, on tente l'installation via Homebrew
+if [ -z "$PY" ]; then
+    echo -e "  ${YELLOW}Python 3 n'est pas detecte. Installation via Homebrew...${NC}"
+    brew install python@3
+    
+    # Verifier les emplacements probables apres installation
+    if [ -x "/opt/homebrew/bin/python3" ]; then
+        PY="/opt/homebrew/bin/python3"
+    elif [ -x "/usr/local/bin/python3" ]; then
+        PY="/usr/local/bin/python3"
+    else
+        PY="python3"
+    fi
+fi
+
+PYTHON_VER=$($PY --version 2>&1)
+echo -e "  ${GREEN}[OK]${NC} $PYTHON_VER detecte via '$PY'."
 echo ""
 
 # ====================================================================
 # ÉTAPE 3 : Mise à jour de pip
 # ====================================================================
-echo -e "${BOLD}[3/7] Mise à jour de pip...${NC}"
-python3 -m pip install --upgrade pip 2>/dev/null || python3 -m ensurepip --upgrade
+echo -e "${BOLD}[3/8] Mise à jour de pip...${NC}"
+$PY -m pip install --upgrade pip 2>/dev/null || $PY -m ensurepip --upgrade
 echo -e "  ${GREEN}[OK]${NC} pip est à jour."
 echo ""
 
 # ====================================================================
 # ÉTAPE 4 : Installation des dépendances système via Homebrew
 # ====================================================================
-echo -e "${BOLD}[4/7] Installation des dépendances système (libiio, libusb)...${NC}"
+echo -e "${BOLD}[4/8] Installation des dépendances système (libiio, libusb)...${NC}"
 brew install libusb 2>/dev/null || true
 
 # libiio est nécessaire pour libm2k
@@ -94,9 +140,9 @@ echo ""
 # ====================================================================
 # ÉTAPE 5 : Installation des paquets Python (pip)
 # ====================================================================
-echo -e "${BOLD}[5/7] Installation des paquets Python (numpy, PyQt6, pyqtgraph, matplotlib)...${NC}"
+echo -e "${BOLD}[5/8] Installation des paquets Python (numpy, PyQt6, pyqtgraph, matplotlib)...${NC}"
 echo ""
-python3 -m pip install numpy PyQt6 PyQt6-sip pyqtgraph matplotlib pyopengl
+$PY -m pip install numpy PyQt6 PyQt6-sip pyqtgraph matplotlib pyopengl
 echo ""
 echo -e "  ${GREEN}[OK]${NC} Paquets pip installés."
 echo ""
@@ -104,14 +150,14 @@ echo ""
 # ====================================================================
 # ÉTAPE 6 : Installation de libm2k
 # ====================================================================
-echo -e "${BOLD}[6/7] Installation de libm2k (bibliothèque Analog Devices)...${NC}"
+echo -e "${BOLD}[6/8] Installation de libm2k (bibliothèque Analog Devices)...${NC}"
 echo ""
 
 LIBM2K_INSTALLED=false
 
 # Méthode 1 : pip
 echo -e "  Tentative d'installation via pip..."
-if python3 -m pip install libm2k 2>/dev/null; then
+if $PY -m pip install libm2k 2>/dev/null; then
     echo -e "  ${GREEN}[OK]${NC} libm2k installé via pip."
     LIBM2K_INSTALLED=true
 else
@@ -186,19 +232,19 @@ fi
 echo -e "${BOLD}[8/8] Vérification de l'installation...${NC}"
 echo ""
 
-python3 -c "import numpy; print('  ✅ numpy', numpy.__version__)" 2>/dev/null \
+$PY -c "import numpy; print('  ✅ numpy', numpy.__version__)" 2>/dev/null \
     || echo -e "  ${RED}❌ numpy non trouvé${NC}"
 
-python3 -c "from PyQt6.QtWidgets import QApplication; print('  ✅ PyQt6')" 2>/dev/null \
+$PY -c "from PyQt6.QtWidgets import QApplication; print('  ✅ PyQt6')" 2>/dev/null \
     || echo -e "  ${RED}❌ PyQt6 non trouvé${NC}"
 
-python3 -c "import pyqtgraph; print('  ✅ pyqtgraph', pyqtgraph.__version__)" 2>/dev/null \
+$PY -c "import pyqtgraph; print('  ✅ pyqtgraph', pyqtgraph.__version__)" 2>/dev/null \
     || echo -e "  ${RED}❌ pyqtgraph non trouvé${NC}"
 
-python3 -c "import matplotlib; print('  ✅ matplotlib', matplotlib.__version__)" 2>/dev/null \
+$PY -c "import matplotlib; print('  ✅ matplotlib', matplotlib.__version__)" 2>/dev/null \
     || echo -e "  ${RED}❌ matplotlib non trouvé${NC}"
 
-python3 -c "import libm2k; print('  ✅ libm2k')" 2>/dev/null \
+$PY -c "import libm2k; print('  ✅ libm2k')" 2>/dev/null \
     || echo -e "  ${YELLOW}⚠️  libm2k non trouvé - voir les instructions ci-dessus${NC}"
 
 # Permissions d'exécution pour le lanceur
