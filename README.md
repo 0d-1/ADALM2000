@@ -32,18 +32,20 @@ Ce logiciel vise à remplacer l'utilisation de scripts basiques par une interfac
 Des scripts d'installation automatisés sont fournis pour simplifier le processus et installer toutes les dépendances requises (`numpy`, `PyQt6`, `pyqtgraph`, `matplotlib`, `libm2k`).
 
 ### Sur Windows
-1. Double-cliquez sur le fichier `install_windows.bat`.
-2. Le script vérifiera votre version de Python et installera toutes les bibliothèques.
-3. *Note sur `libm2k`* : Si l'installation automatique échoue, le script vous donnera les instructions pour installer la librairie manuellement via conda-forge ou l'installateur officiel d'Analog Devices.
+Il vous suffit de double-cliquer sur le fichier **`Installer_ADALM2000.bat`**.
+L'installeur gère absolument tout pour vous de façon 100% autonome :
+1. Il vérifiera si Python est installé. S'il ne l'est pas, il l'installera automatiquement en arrière-plan.
+2. Il téléchargera et configurera toutes les dépendances nécessaires (`numpy`, `PyQt6`, `libm2k`, etc.).
+3. À la fin, il créera un raccourci **`Lancer_Oscilloscope.bat`** et vous proposera d'ouvrir le programme directement.
 
 ### Sur macOS / Linux
 1. Ouvrez un terminal.
 2. Naviguez vers le dossier du projet.
 3. Exécutez le script d'installation :
    ```bash
-   bash install_mac.sh
+   bash Installer_ADALM2000_MAC.sh
    # ou
-   chmod +x install_mac.sh && ./install_mac.sh
+   chmod +x Installer_ADALM2000_MAC.sh && ./Installer_ADALM2000_MAC.sh
    ```
 
 ## 🚀 Démarrage
@@ -51,10 +53,10 @@ Des scripts d'installation automatisés sont fournis pour simplifier le processu
 Une fois l'installation terminée, vous pouvez lancer l'application facilement :
 
 ### Sur Windows
-Double-cliquez sur le raccourci **`Démarrer_Oscilloscope(WIN).bat`**.
+Double-cliquez sur le raccourci **`Lancer_Oscilloscope.bat`** (créé lors de l'installation).
 
 ### Sur macOS
-Double-cliquez sur **`Démarrer_Oscilloscope(MAC).sh`** (ou lancez-le dans le terminal).
+Double-cliquez sur **`Lancer_Oscilloscope_MAC.sh`** (ou lancez-le dans le terminal).
 
 ### En ligne de commande (Tous OS)
 ```bash

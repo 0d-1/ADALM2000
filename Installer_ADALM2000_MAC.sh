@@ -156,9 +156,34 @@ fi
 echo ""
 
 # ====================================================================
-# ÉTAPE 7 : Vérification finale
+# ÉTAPE 7 : Configuration initiale
 # ====================================================================
-echo -e "${BOLD}[7/7] Vérification de l'installation...${NC}"
+echo -e "${BOLD}[7/8] Configuration initiale...${NC}"
+
+# Créer config.json à partir de l'exemple s'il n'existe pas
+if [ ! -f "src/config.json" ]; then
+    if [ -f "src/config.json.example" ]; then
+        cp "src/config.json.example" "src/config.json" >/dev/null 2>&1
+        echo -e "  ${GREEN}[OK]${NC} Fichier de configuration créé (src/config.json)."
+    else
+        # Créer un config.json minimal
+        cat > "src/config.json" << EOL
+{
+  "icon_path": "./icon/MSN Explorer.png",
+  "gemini_api_key": "",
+  "groq_api_key": ""
+}
+EOL
+        echo -e "  ${GREEN}[OK]${NC} Fichier de configuration créé."
+    fi
+else
+    echo -e "  ${GREEN}[OK]${NC} Fichier de configuration déjà présent."
+fi
+
+# ====================================================================
+# ÉTAPE 8 : Vérification finale
+# ====================================================================
+echo -e "${BOLD}[8/8] Vérification de l'installation...${NC}"
 echo ""
 
 python3 -c "import numpy; print('  ✅ numpy', numpy.__version__)" 2>/dev/null \
@@ -176,13 +201,20 @@ python3 -c "import matplotlib; print('  ✅ matplotlib', matplotlib.__version__)
 python3 -c "import libm2k; print('  ✅ libm2k')" 2>/dev/null \
     || echo -e "  ${YELLOW}⚠️  libm2k non trouvé - voir les instructions ci-dessus${NC}"
 
+# Permissions d'exécution pour le lanceur
+chmod +x Lancer_Oscilloscope_MAC.sh
+
 echo ""
 echo -e "${CYAN}${BOLD}"
 echo "  ══════════════════════════════════════════════════════════════"
-echo "   Installation terminée !"
-echo ""
-echo "   Pour lancer l'oscilloscope :"
-echo "     python3 main_oscilloscope.py"
+echo "   INSTALLATION TERMINÉE AVEC SUCCÈS !"
 echo "  ══════════════════════════════════════════════════════════════"
 echo -e "${NC}"
 echo ""
+
+read -p "Voulez-vous lancer l'oscilloscope maintenant ? [O/N] : " LAUNCH
+if [[ "$LAUNCH" == "O" || "$LAUNCH" == "o" || "$LAUNCH" == "y" || "$LAUNCH" == "Y" ]]; then
+    echo "Lancement de ADALM2000 Laboratory..."
+    ./Lancer_Oscilloscope_MAC.sh
+fi
+
