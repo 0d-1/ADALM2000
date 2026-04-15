@@ -20,5 +20,4 @@ ENV/
 # Distribution / packages
 dist/
 build/
-libs/
 *.egg-info/
