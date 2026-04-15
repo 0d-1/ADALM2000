@@ -1,4 +1,9 @@
-import libm2k
+try:
+    import libm2k
+    LIBM2K_AVAILABLE = True
+except ImportError:
+    libm2k = None
+    LIBM2K_AVAILABLE = False
 import numpy as np
 import time
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
@@ -68,6 +73,11 @@ class M2kController(QObject):
         self.worker_thread = None
 
     def connect_device(self):
+        if not LIBM2K_AVAILABLE:
+            raise ConnectionError(
+                "Le driver ADALM2000 (libm2k) n'est pas installé.\n"
+                "Lancez l'installateur 'libm2k-0.9.0-setup.exe' puis redémarrez l'application."
+            )
         print("M2kController: Connexion à l'ADALM2000...")
         self.ctx = libm2k.m2kOpen()
         if self.ctx is None:

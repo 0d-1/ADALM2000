@@ -5,6 +5,7 @@ REM   Copyright (c) 2024-2026 Odin De Baerdemaker - Tous droits reserves
 REM ====================================================================
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
+chcp 65001 >nul
 
 REM --- Chercher Python ---
 set "PY="

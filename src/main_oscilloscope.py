@@ -4,9 +4,25 @@ ADALM2000 Laboratory - Oscilloscope Application
 """
 import sys
 import os
+
+# --- Support Exécutable Autonome (PyInstaller) ---
+# Quand l'application est compilée en .exe, les fichiers sont extraits
+# dans un dossier temporaire accessible via sys._MEIPASS.
+if getattr(sys, 'frozen', False):
+    # Mode exécutable autonome (.exe)
+    _BASE_DIR = sys._MEIPASS
+else:
+    # Mode script Python normal
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    # Ajout du dossier 'libs' local si présent (mode portable)
+    libs_path = os.path.abspath(os.path.join(_BASE_DIR, '..', 'libs'))
+    if os.path.exists(libs_path):
+        sys.path.insert(0, libs_path)
+# -------------------------------------------------
 import time
 import json
 import ctypes
+import subprocess
 import csv
 from datetime import datetime
 import numpy as np
@@ -17,7 +33,7 @@ from PyQt6.QtCore import Qt, QTimer
 import pyqtgraph as pg
 import pyqtgraph.exporters
 from oscilloscope_ui import OscilloscopeUI
-from m2k_controller import M2kController
+from m2k_controller import M2kController, LIBM2K_AVAILABLE
 from ai_signal_generator import AISignalGenerator
 
 class ExportSettingsDialog(QDialog):
@@ -57,8 +73,8 @@ class OscilloscopeApp:
         self.app = QApplication(sys.argv)
         
         # --- App Icon Logic ---
-        # Resolve paths relative to this script's directory, not CWD
-        self._script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Utilise _BASE_DIR qui gère automatiquement le mode .exe et le mode script
+        self._script_dir = _BASE_DIR
         self.config_file = os.path.join(self._script_dir, "config.json")
         icon_path = self.load_icon_path()
         if icon_path and os.path.exists(icon_path):
@@ -1047,6 +1063,65 @@ class OscilloscopeApp:
         scrollbar = self.ui.txt_ai_chat.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
+def _check_and_install_libm2k():
+    """Vérifie si libm2k est installé, propose l'installation automatique sinon."""
+    if LIBM2K_AVAILABLE:
+        return True
+    
+    # Trouver l'installateur embarqué
+    installer_name = "libm2k-0.9.0-setup.exe"
+    search_paths = [
+        os.path.join(_BASE_DIR, installer_name),
+        os.path.join(_BASE_DIR, '..', installer_name),
+        os.path.join(os.path.dirname(_BASE_DIR), installer_name),
+    ]
+    installer_path = None
+    for p in search_paths:
+        if os.path.exists(p):
+            installer_path = os.path.abspath(p)
+            break
+    
+    # Créer une mini-app Qt juste pour le dialogue
+    temp_app = QApplication.instance() or QApplication(sys.argv)
+    
+    if installer_path:
+        reply = QMessageBox.question(
+            None,
+            "Driver ADALM2000 manquant",
+            "Le driver ADALM2000 (libm2k) n'est pas encore installé.\n\n"
+            "Voulez-vous lancer l'installation maintenant ?\n"
+            "(Cela ne prend qu'une minute)\n\n"
+            "L'oscilloscope se lancera ensuite normalement.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            try:
+                subprocess.Popen([installer_path], shell=True)
+                QMessageBox.information(
+                    None,
+                    "Installation en cours",
+                    "L'installateur du driver a été lancé.\n\n"
+                    "Suivez les étapes de l'installateur, puis\n"
+                    "relancez l'oscilloscope une fois terminé."
+                )
+                sys.exit(0)
+            except Exception as e:
+                QMessageBox.warning(None, "Erreur", f"Impossible de lancer l'installateur :\n{e}")
+    else:
+        QMessageBox.warning(
+            None,
+            "Driver ADALM2000 manquant",
+            "Le driver ADALM2000 (libm2k) n'est pas installé et\n"
+            "l'installateur n'a pas été trouvé dans le dossier.\n\n"
+            "Téléchargez-le depuis :\n"
+            "https://github.com/analogdevicesinc/libm2k/releases\n\n"
+            "L'application peut démarrer, mais la connexion\n"
+            "à l'ADALM2000 ne fonctionnera pas."
+        )
+    return False
+
+
 if __name__ == '__main__':
+    _check_and_install_libm2k()
     app = OscilloscopeApp()
     app.run()
