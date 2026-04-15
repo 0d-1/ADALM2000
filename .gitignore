@@ -18,6 +18,4 @@ ENV/
 .idea/
 
 # Distribution / packages
-dist/
-build/
 *.egg-info/
