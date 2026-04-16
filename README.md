@@ -1,99 +1,71 @@
-# ADALM2000 Laboratory
+# 🔬 ADALM2000 Laboratory - L'Oscilloscope Augmenté par l'IA
 
-Une application d'oscilloscope professionnelle et performante pour le module d'acquisition **Analog Devices ADALM2000**, développée en Python avec **PyQt6** et **pyqtgraph**.
+[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/)
+[![UI Framework](https://img.shields.io/badge/UI-PyQt6-blueviolet)](https://www.riverbankcomputing.com/software/pyqt/)
+[![AI Powered](https://img.shields.io/badge/AI-Groq%20%2F%20Llama%203.3-orange)](https://groq.com/)
 
-Ce logiciel vise à remplacer l'utilisation de scripts basiques par une interface graphique complète, fluide (30+ FPS) et riche en fonctionnalités, se rapprochant des outils professionnels de laboratoire.
+Une plateforme d'instrumentation professionnelle pour le module **Analog Devices ADALM2000**, propulsée par l'intelligence artificielle pour une expérience de laboratoire révolutionnaire.
+
+---
+
+## 🤖 L'Intelligence Artificielle au Cœur du Signal
+
+Contrairement aux outils traditionnels, **ADALM2000 Laboratory** intègre un assistant de signal intelligent basé sur les derniers modèles de langage (**Llama 3.3 via Groq**).
+
+*   **Pilotage en Langage Naturel** : Plus besoin de formules complexes ou de scripts manuels. "Génère une sinusoïde de 1kHz avec une amplitude de 2V" suffit pour configurer votre matériel.
+*   **Prototypage de Signaux Complexes** : Demandez des signaux sophistiqués (Chirps, modulations, bruit rose, impulsions physiologiques) et l'IA écrit le code NumPy optimal en temps réel.
+*   **Prévisualisation IA** : Visualisez instantanément la réponse théorique générée par l'IA avant de l'envoyer physiquement sur les sorties W1/W2.
+*   **Correction Itérative** : Discutez avec l'IA pour affiner votre signal ("Ajoute un peu de bruit", "Augmente la fréquence de 20%").
+
+---
 
 ## ✨ Fonctionnalités Principales
 
-*   **Oscilloscope Temps Réel** : Visualisation fluide sur 2 canaux (CH1, CH2) avec ajustement du gain, de l'offset, et de la base de temps.
-*   **Contrôle Avancé des Sondes** : Support des sondes x1, x10, x100, couplage AC logiciel, et calibrage automatique du Zéro (DC Offset compensation).
-*   **Déclenchement (Trigger)** : Trigger logiciel avec hystérésis paramétrable pour stabiliser les signaux périodiques.
-*   **Générateur de Signaux (AWG)** : Contrôle des deux sorties analogiques (W1, W2) pour générer des signaux sinus, carrés, triangles, ou des impulsions personnalisées (ex: signaux à base de BPM).
-*   **🤖 Génération assistée par IA** : Discutez avec une intelligence artificielle (Groq / Llama 3.3) pour décrire n'importe quel signal complexe en langage naturel, le prévisualiser et l'appliquer directement sur le matériel.
-*   **Analyseur de Spectre (FFT)** : Calcul et affichage en temps réel de la transformée de Fourier, y compris sur des régions ciblées du graphe (ROI - *Region of Interest*).
-*   **Outils de Mesure** :
-    *   Curseurs Verticaux (Temps/Fréquence) et Horizontaux (Tension) pour des mesures précises sur le graphe.
-    *   Voltmètre intégré avec calcul de DC, RMS, Vpp et estimation de la fréquence. Fonction de "Squelch" pour filtrer le bruit lorsque les sondes sont débranchées.
-*   **Analyse Avancée** : Vue XY (Lissajous) et fonctions Mathématiques (CH1+CH2, CH1-CH2, CH1*CH2).
-*   **Exportation & Enregistrement** :
-    *   Exportation du graphique en image PNG haute résolution avec personnalisation du titre, des axes et des couleurs.
-    *   Enregistrement continu des données (Data Logger) au format CSV pour des analyses de longue durée (ex: charge d'une batterie).
-    *   Sauvegarde de "Snapshots" (capture des données actuelles à l'écran) en CSV et chargement de signaux de référence.
+### 📊 Analyses de Précision
+*   **Oscilloscope Temps Réel** : Visualisation fluide sur 2 canaux (CH1, CH2) à 30+ FPS avec réglages de gain et offset.
+*   **Analyseur de Spectre (FFT)** : Transformée de Fourier rapide avec fenêtre de Hann et support des régions d'intérêt (ROI).
+*   **Voltmètre Intelligent** : Mesures DC, RMS, Vpp et fréquence avec filtre "Squelch" anti-bruit.
+*   **Analyse de Lissajous (XY)** : Mode XY pour l'étude des déphasages et des composants.
 
-## 🛠️ Prérequis
+### ⚙️ Contrôle Avancé
+*   **Générateur de Signaux (AWG)** : Deux sorties indépendantes (W1, W2) avec pré-réglages pro et mode personnalisé.
+*   **Trigger Logiciel Expert** : Stabilisation parfaite des signaux grâce au trigger avec hystérésis paramétrable.
+*   **Outils de Mesure** : Curseurs verticaux (Temps/Freq) et horizontaux (Tension) pour une précision chirurgicale.
 
-*   Un module **ADALM2000** branché en USB.
-*   **Python 3.9** ou supérieur installé sur votre ordinateur.
-    *   *Important (Windows)* : Cochez bien la case **"Add Python to PATH"** lors de l'installation de Python.
-
-## 📥 Installation
-
-Des scripts d'installation automatisés sont fournis pour simplifier le processus et installer toutes les dépendances requises (`numpy`, `PyQt6`, `pyqtgraph`, `matplotlib`, `libm2k`).
-
-### Sur Windows
-Il vous suffit de double-cliquer sur le fichier **`Installer_ADALM2000.bat`**.
-L'installeur gère absolument tout pour vous de façon 100% autonome :
-1. Il vérifiera si Python est installé. S'il ne l'est pas, il l'installera automatiquement en arrière-plan.
-2. Il téléchargera et configurera toutes les dépendances nécessaires (`numpy`, `PyQt6`, `libm2k`, etc.).
-3. À la fin, il créera un raccourci **`Lancer_Oscilloscope.bat`** et vous proposera d'ouvrir le programme directement.
-
-### Sur macOS / Linux
-1. Ouvrez un terminal.
-2. Naviguez vers le dossier du projet.
-3. Exécutez le script d'installation :
-   ```bash
-   bash Installer_ADALM2000_MAC.sh
-   # ou
-   chmod +x Installer_ADALM2000_MAC.sh && ./Installer_ADALM2000_MAC.sh
-   ```
-
-## 🚀 Démarrage
-
-Une fois l'installation terminée, vous pouvez lancer l'application facilement :
-
-### Sur Windows
-Double-cliquez sur le raccourci **`Lancer_Oscilloscope.bat`** (créé lors de l'installation).
-
-### Sur macOS
-Double-cliquez sur **`Lancer_Oscilloscope_MAC.sh`** (ou lancez-le dans le terminal).
-
-### En ligne de commande (Tous OS)
-```bash
-python src/main_oscilloscope.py
-```
-
-## 📖 Guide Rapide de l'Interface
-
-L'interface est divisée en plusieurs panneaux et onglets :
-
-1.  **Panneau de Contrôle Latéral (Gauche)** :
-    *   **Contrôle Acquisition** : Démarrer/Mettre en pause l'acquisition en temps réel. Le bouton "Auto-Set" tente d'ajuster automatiquement les réglages pour visualiser le signal actuel.
-    *   **Échelle de Temps** : Modifiez la base de temps globale (X) du graphique.
-    *   **Réglages CH1 / CH2** : Activez ou désactivez les canaux. Ajustez les V/Div (échelle verticale), l'Offset (position), et l'épaisseur du trait.
-2.  **Zone Graphique (Centre)** : Affiche les signaux. Faites clic droit -> "Analyse Graphe" pour ajouter des curseurs de mesure.
-3.  **Panneau d'Onglets (Droite)** :
-    *   **Générateurs** : Configurez les signaux de sortie pour W1 et W2.
-    *   **🤖 IA** : Décrivez un signal en langage naturel et l'IA (Groq / Llama 3.3) le programmera pour vous. Clé API gratuite requise ([console.groq.com](https://console.groq.com/keys)).
-    *   **Spectre (FFT)** : Activez la vue fréquentielle.
-    *   **XY (Lissajous)** : Affiche CH1 en fonction de CH2.
-    *   **Math** : Appliquez des opérations entre CH1 et CH2.
-    *   **Voltmètre** : Retrouvez les mesures numériques détaillées.
-    *   **Data Logger** : Enregistrez en continu dans un fichier CSV.
-    *   **Export/Data** : Exportez le graphe en PNG qualité impression, ou sauvegardez les données brutes.
-
-## ⚠️ Dépannage Fréquent
-
-**"libm2k non trouvé" ou "ModuleNotFoundError: No module named 'libm2k'"**
-La librairie `libm2k` d'Analog Devices est parfois complexe à installer via pip selon votre OS et version de Python.
-*   **Solution recommandée** : Utilisez Miniconda et installez-la via `conda install -c conda-forge libm2k`.
-*   **Alternative Windows** : Téléchargez l'installateur `.exe` depuis le [Github officiel d'Analog Devices](https://github.com/analogdevicesinc/libm2k/releases).
-
-**L'application se fige ou manque de fluidité**
-*   Assurez-vous de ne pas avoir une échelle de temps trop grande combinée à des calculs FFT complexes.
-*   Désactivez les onglets XY ou Math s'ils ne sont pas utilisés.
-
-**Les mesures du voltmètre bougent beaucoup alors que rien n'est branché ("Bruit")**
+### 💾 Gestion des Données
+*   **Data Logger** : Enregistrement continu longue durée (CSV) pour le monitoring.
+*   **Exportation Haute Qualité** : Capturez vos résultats en PNG haute résolution pour vos rapports et publications.
+*   **Snapshots & Références** : Sauvegardez un état instantané ou chargez un signal de référence pour comparaison.
 
 ---
-© 2024-2026 **Odin De Baerdemaker** - Tous droits réservés.
+
+## 🚀 Démarrage Rapide
+
+### 1️⃣ Installation Automatique (Windows)
+Double-cliquez sur **`Installer_ADALM2000.bat`**. 
+L'installeur gère l'installation de Python, des drivers `libm2k` et des dépendances (`numpy`, `PyQt6`, `pyqtgraph`).
+
+### 2️⃣ Utilisation de l'IA
+1. Rendez-vous dans l'onglet **🤖 IA**.
+2. Entrez votre clé API gratuite [Groq](https://console.groq.com/keys).
+3. Décrivez votre besoin : *"Génère un signal ECG simulé à 60 BPM"* ou *"Simule une décharge de condensateur"*.
+
+---
+
+## 🛠️ Configuration Technique
+
+*   **Matériel** : Analog Devices ADALM2000.
+*   **Logiciel** : Python 3.9+, PyQt6, Pyqtgraph, Libm2k.
+*   **AI Backend** : API Groq (Modèles Llama 3.3, 3.1).
+
+---
+
+## ⚠️ Dépannage
+Si la librairie `libm2k` pose problème lors de l'installation manuelle, privilégiez l'installeur automatique ou utilisez **Conda** :
+```bash
+conda install -c conda-forge libm2k
+```
+
+---
+---
+© 2024-2026 **Odin De Baerdemaker** - L'innovation au service de l'électronique.
