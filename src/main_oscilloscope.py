@@ -70,7 +70,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "1.3.0"
+    VERSION = "1.3.2"
     UPDATE_URL = "https://voie-du-savoir.go.yj.fr/scodin/version.txt"
     DOWNLOAD_URL = "https://voie-du-savoir.go.yj.fr/scodin/ADALM2000_Oscilloscope.zip"
 
