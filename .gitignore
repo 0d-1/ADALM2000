@@ -1,5 +1,5 @@
 # User configuration
-src/config.json
+**/config.json
 
 # Python
 __pycache__/
@@ -19,3 +19,6 @@ ENV/
 
 # Distribution / packages
 *.egg-info/
+build/
+dist/
+*.zip

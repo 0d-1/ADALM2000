@@ -4,37 +4,35 @@ ADALM2000 Laboratory - Oscilloscope Application
 """
 import sys
 import os
-
-# --- Support Exécutable Autonome (PyInstaller) ---
-# Quand l'application est compilée en .exe, les fichiers sont extraits
-# dans un dossier temporaire accessible via sys._MEIPASS.
-if getattr(sys, 'frozen', False):
-    # Mode exécutable autonome (.exe)
-    _BASE_DIR = sys._MEIPASS
-else:
-    # Mode script Python normal
-    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    # Ajout du dossier 'libs' local si présent (mode portable)
-    libs_path = os.path.abspath(os.path.join(_BASE_DIR, '..', 'libs'))
-    if os.path.exists(libs_path):
-        sys.path.insert(0, libs_path)
-# -------------------------------------------------
 import time
 import json
 import ctypes
 import subprocess
 import csv
+import urllib.request
+import webbrowser
+import threading
 from datetime import datetime
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QFileDialog, QSplashScreen, QProgressBar, 
-                             QDialog, QVBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QMessageBox)
+                             QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QMessageBox, QMainWindow)
 from PyQt6.QtGui import QIcon, QPixmap, QFont
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, QObject, pyqtSignal, pyqtSlot
 import pyqtgraph as pg
 import pyqtgraph.exporters
 from oscilloscope_ui import OscilloscopeUI
 from m2k_controller import M2kController, LIBM2K_AVAILABLE
 from ai_signal_generator import AISignalGenerator
+
+# --- Support Exécutable Autonome (PyInstaller) ---
+if getattr(sys, 'frozen', False):
+    _BASE_DIR = sys._MEIPASS
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    libs_path = os.path.abspath(os.path.join(_BASE_DIR, '..', 'libs'))
+    if os.path.exists(libs_path):
+        sys.path.insert(0, libs_path)
+# -------------------------------------------------
 
 class ExportSettingsDialog(QDialog):
     def __init__(self, parent=None, current_title="", current_x="", current_y=""):
@@ -68,9 +66,14 @@ class ExportSettingsDialog(QDialog):
             "y_label": self.y_label_edit.text()
         }
 
-class OscilloscopeApp:
+class OscilloscopeApp(QObject):
+    VERSION = "1.3.0"
+    UPDATE_URL = "https://voie-du-savoir.go.yj.fr/scodin/version.txt"
+    DOWNLOAD_URL = "https://voie-du-savoir.go.yj.fr/scodin/ADALM2000_Oscilloscope.zip"
+
     def __init__(self):
-        self.app = QApplication(sys.argv)
+        super().__init__()
+        self.app = QApplication.instance() or QApplication(sys.argv)
         
         # --- App Icon Logic ---
         # Utilise _BASE_DIR qui gère automatiquement le mode .exe et le mode script
@@ -114,11 +117,12 @@ class OscilloscopeApp:
         """)
         
         splash.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
-        splash.showMessage("\n\n\nADALM2000 Laboratory\nChargement des modules...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+        splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nChargement des modules...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
         splash.show()
         self.app.processEvents()
 
         self.ui = OscilloscopeUI()
+        self.ui.setWindowTitle(f"SCODIN - ADALM2000 Pro Station [v{self.VERSION}]")
         self.controller = M2kController()
         self.sample_rate = self.controller.sample_rate
         
@@ -147,6 +151,15 @@ class OscilloscopeApp:
         
         self.zoom_time = self.ui.spin_time.value()
         self.zoom_samples = int(self.sample_rate * self.zoom_time)
+        
+        # --- Qualité de rendu (downsample) ---
+        self._quality_map = {1: 10000, 2: 50000, 3: 200000, 4: 500000, 5: 1000000}
+        self._max_render_points = self._quality_map[3]
+        
+        # --- FPS Counter ---
+        self._fps_timer = 0
+        self._fps_frame_count = 0
+        self._last_fps_time = time.time()
         
         self.update_pens() # Init des pinceaux
 
@@ -180,6 +193,8 @@ class OscilloscopeApp:
         self.ui.btn_autoset.clicked.connect(self.run_autoset)
         self.ui.btn_load_ref.clicked.connect(self.load_reference_file)
         self.ui.btn_clear_xy.clicked.connect(lambda: self.ui.curve_xy.setData([], []))
+        self.ui.btn_run_ohm.clicked.connect(self.toggle_ohmmeter)
+        self.ui.combo_ohm_range.currentIndexChanged.connect(self.update_ohmmeter_instructions)
         
         # Connexions Analyse Graphe
         self.ui.action_v_cursors.triggered.connect(self.toggle_v_cursors)
@@ -211,11 +226,21 @@ class OscilloscopeApp:
         self.ui.spin_thick_ch1.valueChanged.connect(self.update_pens)
         self.ui.spin_thick_ch2.valueChanged.connect(self.update_pens)
         
+        # Connexions Navigation Graphe
+        self.ui.btn_recenter.clicked.connect(self.recenter_view)
+        self.ui.slider_quality.valueChanged.connect(self.on_quality_changed)
+        # Détecter le pan/zoom manuel de l'utilisateur sur le graphique
+        self.ui.plot_widget.sigRangeChanged.connect(self._on_user_range_changed)
+        self._ignore_range_signal = False  # Pour éviter les boucles
+        
         # Initialisation du signal idéal
         self.update_ideal_signal(self.ui.spin_bpm.value())
         
         # Démarrage du délai de 5s et tentative de connexion matérielle
         self.run_splash_loop(splash)
+        
+        # Vérification des mises à jour (en arrière-plan)
+        threading.Thread(target=self.check_for_updates, daemon=True).start()
         
     def run_splash_loop(self, splash):
         steps = 100
@@ -223,10 +248,10 @@ class OscilloscopeApp:
             val = i + 1
             self.splash_progress.setValue(val)
             
-            if val == 10: splash.showMessage("\n\n\nADALM2000 Laboratory\nInitialisation du contrôleur USB...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
-            if val == 40: splash.showMessage("\n\n\nADALM2000 Laboratory\nTentative de communication matérielle...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
-            if val == 70: splash.showMessage("\n\n\nADALM2000 Laboratory\nAnalyseur de Spectre & FFT...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
-            if val == 90: splash.showMessage("\n\n\nADALM2000 Laboratory\nDémarrage de l'interface graphique...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 10: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nInitialisation du contrôleur USB...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 40: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nTentative de communication matérielle...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 70: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nAnalyseur de Spectre & FFT...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 90: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nDémarrage de l'interface graphique...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
             
             # Au milieu de la barre, on essaie vraiment la connexion
             if val == 50:
@@ -237,6 +262,10 @@ class OscilloscopeApp:
             
         self.ui.show()
         splash.finish(self.ui)
+
+    def run(self):
+        """Lance la boucle principale de l'application."""
+        sys.exit(self.app.exec())
 
     def apply_custom_signal(self, channel):
         if channel == 0:
@@ -279,7 +308,7 @@ class OscilloscopeApp:
     def toggle_roi_fft(self, state):
         if state:
             self.ui.plot_widget.addItem(self.ui.roi_fft)
-            self.ui.tabs.setCurrentIndex(3) # Switch to FFT tab
+            self.ui.navigate_to(self.ui.tab_spectrum) # Naviguer vers Spectre FFT
         else:
             self.ui.plot_widget.removeItem(self.ui.roi_fft)
 
@@ -368,15 +397,50 @@ class OscilloscopeApp:
         self.zoom_samples = int(self.sample_rate * self.zoom_time)
         self.zoom_samples = min(self.zoom_samples, self.buffer_size)
         
-        self.ui.plot_widget.setXRange(0, self.zoom_time)
+        # Recentrer automatiquement le graphe quand on change l'échelle via le panneau
+        self.ui._user_panned = False
+        self.ui.btn_recenter.hide()
+        self._apply_auto_range()
         self.update_plot()
+    
+    def _apply_auto_range(self):
+        """Applique le cadrage automatique du graphe (X et Y)."""
+        self._ignore_range_signal = True
+        self.ui.plot_widget.setXRange(0, self.zoom_time, padding=0)
+        self.update_y_range()
+        self._ignore_range_signal = False
+    
+    def _on_user_range_changed(self):
+        """Détecté quand l'utilisateur pan/zoom manuellement sur le graphique."""
+        if self._ignore_range_signal:
+            return
+        if not self.ui._user_panned:
+            self.ui._user_panned = True
+            self.ui.btn_recenter.show()
+    
+    def recenter_view(self):
+        """Remet la vue centrée et ajustée automatiquement."""
+        self.ui._user_panned = False
+        self.ui.btn_recenter.hide()
+        self._apply_auto_range()
+    
+    def on_quality_changed(self, value):
+        """Met à jour le nombre max de points de rendu selon le slider."""
+        self._max_render_points = self._quality_map.get(value, 200000)
+        labels = {1: "1 (Perf++)", 2: "2 (Rapide)", 3: "3 (Normal)", 4: "4 (Détail)", 5: "5 (Max)"}
+        self.ui.lbl_quality_val.setText(labels.get(value, str(value)))
 
     def update_y_range(self):
         if not self.ui.chk_auto_y.isChecked():
             v1 = self.ui.spin_v_div_ch1.value() * 4 # 8 divisions totales (approx)
             v2 = self.ui.spin_v_div_ch2.value() * 4
             v_max = max(v1, v2)
+            self._ignore_range_signal = True
             self.ui.plot_widget.setYRange(-v_max, v_max)
+            self._ignore_range_signal = False
+            # Recentrer si on change via le panneau
+            if not self.ui._user_panned:
+                self.ui.btn_recenter.hide()
 
     def change_voltage(self, value):
         # Cette méthode est gardée pour compatibilité si appelée ailleurs
@@ -498,8 +562,11 @@ class OscilloscopeApp:
             return (np.concatenate((self.y_history_ch1[p1:], self.y_history_ch1[:self.ptr])),
                     np.concatenate((self.y_history_ch2[p1:], self.y_history_ch2[:self.ptr])))
 
-    def fast_downsample(self, y_arr, max_points=200000):
-        """Downsampling manuel ultra-rapide par création d'une enveloppe min/max pour éviter les freeze graphiques"""
+    def fast_downsample(self, y_arr, max_points=None):
+        """Downsampling adapté au slider qualité et à l'échelle visible."""
+        if max_points is None:
+            max_points = self._max_render_points
+        
         if len(y_arr) <= max_points:
             return y_arr
             
@@ -518,6 +585,16 @@ class OscilloscopeApp:
     def update_plot(self):
         if not self.is_running:
             return
+        
+        # --- Compteur FPS ---
+        self._fps_frame_count += 1
+        now = time.time()
+        elapsed = now - self._last_fps_time
+        if elapsed >= 1.0:
+            fps = self._fps_frame_count / elapsed
+            self.ui.lbl_fps.setText(f"{fps:.0f} FPS")
+            self._fps_frame_count = 0
+            self._last_fps_time = now
             
         # Pousser la vue
         lookback_samples = min(self.buffer_size, self.zoom_samples + int(self.sample_rate * 0.1))
@@ -572,8 +649,14 @@ class OscilloscopeApp:
             t_display_opt_2 = np.linspace(0, self.zoom_time, len(y_display_opt_ch2), endpoint=False)
             self.ui.curve_ch2.setData(t_display_opt_2, y_display_opt_ch2)
         
+        # --- Auto-fit si pas en mode navigation libre ---
+        if not self.ui._user_panned:
+            self._ignore_range_signal = True
+            self.ui.plot_widget.setXRange(0, self.zoom_time, padding=0)
+            self._ignore_range_signal = False
+        
         # Mise à jour de l'analyseur de spectre (Toutes les 10 frames si onglet actif)
-        if self.ui.tabs.currentIndex() == 4: # Onglet Spectre
+        if self.ui.get_active_page() is self.ui.tab_spectrum: # Onglet Spectre
             if self.frame_count % 10 == 0:
                 if self.ui.action_roi_fft.isChecked():
                     region = self.ui.roi_fft.getRegion()
@@ -587,18 +670,23 @@ class OscilloscopeApp:
                     self.update_spectrum(y_display_ch1, y_display_ch2)
         
         # Mise à jour du Voltmètre (Toutes les 6 frames si onglet actif)
-        if self.ui.tabs.currentIndex() == 7: # Onglet Voltmeter
+        if self.ui.get_active_page() is self.ui.tab_voltmeter: # Onglet Voltmeter
             if self.frame_count % 6 == 0:
                 self.update_voltmeter(y_display_ch1, y_display_ch2)
         
+        # Mise à jour du Multimètre (Toutes les 6 frames si onglet actif)
+        if self.ui.get_active_page() is self.ui.tab_multimeter: # Onglet Multimètre
+            if self.frame_count % 6 == 0:
+                self.update_multimeter(y_display_ch1)
+        
         # Mise à jour de la Vue XY
-        if self.ui.tabs.currentIndex() == 5: # Onglet XY
+        if self.ui.get_active_page() is self.ui.tab_xy: # Onglet XY
             # On prend moins de points pour la vue XY pour éviter les lags (ex: 2000 points max)
             skip = max(1, len(y_display_ch1) // 2000)
             self.ui.curve_xy.setData(y_display_ch1[::skip], y_display_ch2[::skip])
 
         # Mise à jour des Math (Uniquement si onglet spécifique actif ou visibles sur le plot principal)
-        if self.ui.tabs.currentIndex() == 6: # Onglet Math
+        if self.ui.get_active_page() is self.ui.tab_math: # Onglet Math
             if self.ui.chk_math_enabled.isChecked():
                 op = self.ui.combo_math_op.currentIndex()
                 if op == 0: math_data = y_display_ch1 + y_display_ch2
@@ -661,6 +749,131 @@ class OscilloscopeApp:
         self.ui.lbl_ch2_vpp.setText(f"Vpp: {p2:.3f} V")
         self.ui.lbl_ch2_freq.setText(f"FREQ: {int(f2)} Hz")
 
+    def toggle_ohmmeter(self, checked):
+        if checked:
+            # Activer W1 à 1.0V DC pour la mesure
+            self.controller.generate_custom_waveform(0, 0, 1000, 0, 1.0) # Type 0 (Sin), Amp 0, Offset 1.0 = DC
+            self.ui.btn_run_ohm.setText("Ohmmètre ACTIF (Cliquer pour Arrêter)")
+            self.ui.btn_run_ohm.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")
+        else:
+            # Désactiver W1 (ou remettre signal de base)
+            self.controller.generate_base_signal(self.ui.spin_bpm.value())
+            self.ui.btn_run_ohm.setText("Démarrer l'Ohmmètre")
+            self.ui.btn_run_ohm.setStyleSheet("background-color: #333; color: #5bc0de; font-weight: bold; padding: 10px; border: 1px solid #5bc0de;")
+            self.ui.lbl_ohm_val.setText("--- Ω")
+
+    def update_multimeter(self, ch1):
+        v_dc = np.mean(ch1)
+        self.ui.lbl_multi_v.setText(f"{v_dc:.3f} V")
+        
+        if self.ui.btn_run_ohm.isChecked():
+            v_source = 1.0
+            
+            if self.ui.combo_ohm_range.currentIndex() == 0: # Basse Résistance (Source 50 Ω)
+                r_source = 50.0
+                denominator = v_source - v_dc
+                if denominator < 0.001:
+                    res = float('inf')
+                else:
+                    res = (max(0, v_dc) * r_source) / denominator
+            else: # Haute Résistance (Scope Input 1 MΩ)
+                r_scope = 1000000.0
+                # Rx = R_scope * (V_src / V_mes - 1)
+                v_mes = max(0.0001, v_dc)
+                res = r_scope * (v_source / v_mes - 1)
+            
+            if res > 10000000: # 10 MΩ max pour l'affichage
+                self.ui.lbl_ohm_val.setText("O.L (Inf)")
+                self.ui.lbl_continuity.setText("Continuité : OUVERT")
+                self.ui.lbl_continuity.setStyleSheet("color: #d9534f; font-weight: bold;")
+            elif res >= 1000000:
+                self.ui.lbl_ohm_val.setText(f"{res/1000000:.2f} MΩ")
+                self.ui.lbl_continuity.setText("Continuité : OUVERT")
+                self.ui.lbl_continuity.setStyleSheet("color: #d9534f; font-weight: bold;")
+            elif res >= 1000:
+                self.ui.lbl_ohm_val.setText(f"{res/1000:.2f} kΩ")
+                self.ui.lbl_continuity.setText("Continuité : OUVERT")
+                self.ui.lbl_continuity.setStyleSheet("color: #d9534f; font-weight: bold;")
+            else:
+                self.ui.lbl_ohm_val.setText(f"{max(0, res):.1f} Ω")
+                # Seuil de continuité à 50 ohms
+                if res < 50:
+                    self.ui.lbl_continuity.setText("Continuité : OK (BIP)")
+                    self.ui.lbl_continuity.setStyleSheet("color: #5cb85c; font-weight: bold; background: #1a3a1a;")
+                else:
+                    self.ui.lbl_continuity.setText("Continuité : OUVERT")
+                    self.ui.lbl_continuity.setStyleSheet("color: #d9534f; font-weight: bold;")
+
+    def check_for_updates(self):
+        """Vérifie si une nouvelle version est disponible sur le serveur."""
+        try:
+            # On attend que l'application soit totalement lancée (après le splash screen de 5s)
+            time.sleep(7)
+            
+            # Utilisation d'un User-Agent pour éviter les blocages serveurs
+            req = urllib.request.Request(self.UPDATE_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            
+            # Certains certificats SSL sur des hébergements gratuits peuvent poser problème
+            import ssl
+            context = ssl._create_unverified_context()
+            
+            with urllib.request.urlopen(req, timeout=10, context=context) as response:
+                raw_data = response.read().decode('utf-8').strip()
+                # On ne garde que les chiffres et les points (enlève d'éventuels caractères BOM ou cachés)
+                online_version = "".join(c for c in raw_data if c.isdigit() or c == '.')
+                
+                print(f"DEBUG MAJ : Locale='{self.VERSION}', Serveur='{online_version}'")
+                
+                # Comparaison numérique (ex: [1, 3, 1] > [1, 3, 0])
+                try:
+                    v_online = [int(x) for x in online_version.split('.') if x]
+                    v_local = [int(x) for x in self.VERSION.split('.') if x]
+                    
+                    if v_online > v_local:
+                        print("MAJ : Nouvelle version détectée sur le serveur !")
+                        # Appel thread-safe via invokeMethod sur soi-même (maintenant que c'est un QObject)
+                        QMetaObject.invokeMethod(self, "show_update_popup", 
+                                               Qt.ConnectionType.QueuedConnection,
+                                               Q_ARG(str, online_version))
+                    else:
+                        print("MAJ : Le logiciel est à jour.")
+                except Exception as ve:
+                    print(f"Erreur format version: {ve} (Data raw: '{raw_data}')")
+                    
+        except Exception as e:
+            print(f"Update check failed: {e}")
+
+    @pyqtSlot(str)
+    def show_update_popup(self, new_version):
+        """Affiche la boîte de dialogue de mise à jour."""
+        msg = QMessageBox(self.ui)
+        msg.setWindowTitle("✨ Mise à jour disponible")
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setText(f"<h3>Une nouvelle version est disponible !</h3>")
+        msg.setInformativeText(
+            f"Version actuelle : <b>{self.VERSION}</b><br>"
+            f"Nouvelle version : <b style='color: #5cb85c;'>{new_version}</b><br><br>"
+            "Voulez-vous télécharger la mise à jour maintenant ?"
+        )
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
+        
+        # Style de la popup pour coller à l'UI
+        msg.setStyleSheet("""
+            QMessageBox { background-color: #121212; color: white; }
+            QLabel { color: #e0e0e0; }
+            QPushButton { background-color: #333; color: white; padding: 6px 15px; border-radius: 4px; }
+            QPushButton:hover { background-color: #444; }
+        """)
+
+        if msg.exec() == QMessageBox.StandardButton.Yes:
+            webbrowser.open(self.DOWNLOAD_URL)
+
+    def update_ohmmeter_instructions(self, index):
+        # On ne change pas le texte ici pour éviter de tout réécrire, 
+        # mais on pourrait mettre en gras la partie active
+        pass
+
     def browse_log_file(self):
         file_path, _ = QFileDialog.getSaveFileName(self.ui, "Enregistrer les données", "mesures_adalm.csv", "CSV Files (*.csv)")
         if file_path:
@@ -710,7 +923,7 @@ class OscilloscopeApp:
 
     def update_spectrum(self, ch1_raw, ch2_raw):
         # On ne calcule que si l'onglet est visible pour économiser du CPU
-        if self.ui.tabs.currentIndex() != 3: # Index de l'onglet spectre
+        if self.ui.get_active_page() is not self.ui.tab_spectrum: # Onglet spectre
             return
             
         # On utilise une fenêtre de données fixe pour la FFT (ex: 8192 points ou zoom actuel)

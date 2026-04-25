@@ -75,11 +75,94 @@ class OscilloscopeUI(QWidget):
         self.curve_ideal.setVisible(False)
         self.plot_widget.addLegend(offset=(10, 40))
         
+        # --- Bouton RECENTRER flottant (apparait quand vue décalée) ---
+        self.btn_recenter = QPushButton("🎯 Recentrer", self.plot_widget)
+        self.btn_recenter.setFixedSize(110, 32)
+        self.btn_recenter.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(91, 192, 222, 200);
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: rgba(91, 192, 222, 255);
+            }
+        """)
+        self.btn_recenter.move(120, 10)
+        self.btn_recenter.hide()
+        
+        # --- Label FPS flottant ---
+        self.lbl_fps = QLabel("-- FPS", self.plot_widget)
+        self.lbl_fps.setStyleSheet("color: #666; font-size: 10px; background: transparent;")
+        self.lbl_fps.setFixedSize(60, 16)
+        self.lbl_fps.move(10, 44)
+        
+        # Flag pour savoir si l'utilisateur a déplacé la vue manuellement
+        self._user_panned = False
+        
         self.graph_layout.addWidget(self.plot_widget)
         
-        # --- Zone Droite : Onglets ---
-        self.tabs = QTabWidget()
+        # --- Zone Droite : Navigation par Catégories ---
+        # Style commun pour les onglets (principal et sous-onglets)
+        _tab_style = """
+            QTabWidget::pane {
+                border: 1px solid #333;
+                border-top: none;
+                background: #121212;
+            }
+            QTabBar::tab {
+                background: #1a1a2e;
+                color: #888;
+                padding: 8px 12px;
+                margin-right: 2px;
+                border-top-left-radius: 6px;
+                border-top-right-radius: 6px;
+                border: 1px solid #333;
+                border-bottom: none;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QTabBar::tab:selected {
+                background: #121212;
+                color: #e0e0e0;
+                border-bottom: 2px solid #5bc0de;
+            }
+            QTabBar::tab:hover:!selected {
+                background: #252540;
+                color: #bbb;
+            }
+        """
+        _sub_tab_style = """
+            QTabWidget::pane {
+                border: none;
+                background: transparent;
+            }
+            QTabBar::tab {
+                background: transparent;
+                color: #666;
+                padding: 5px 10px;
+                margin-right: 1px;
+                border: none;
+                border-bottom: 2px solid transparent;
+                font-size: 11px;
+            }
+            QTabBar::tab:selected {
+                color: #5bc0de;
+                border-bottom: 2px solid #5bc0de;
+            }
+            QTabBar::tab:hover:!selected {
+                color: #aaa;
+                border-bottom: 2px solid #444;
+            }
+        """
         
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(_tab_style)
+        
+        # --- Création des pages individuelles ---
         self.tab_osc = QWidget()
         self.tab_gen = QWidget()
         self.tab_custom_gen = QWidget()
@@ -87,19 +170,40 @@ class OscilloscopeUI(QWidget):
         self.tab_xy = QWidget()
         self.tab_math = QWidget()
         self.tab_voltmeter = QWidget()
+        self.tab_multimeter = QWidget()
         self.tab_logger = QWidget()
         self.tab_ai = QWidget()
         
-        self.tabs.addTab(self.tab_osc, "Oscillo")
-        self.tabs.addTab(self.tab_gen, "Générateur W1")
-        self.tabs.addTab(self.tab_custom_gen, "Générateurs W1/W2")
-        self.tabs.addTab(self.tab_ai, "🤖 IA")
-        self.tabs.addTab(self.tab_spectrum, "Spectre")
-        self.tabs.addTab(self.tab_xy, "Vue XY")
-        self.tabs.addTab(self.tab_math, "Math & Réf")
-        self.tabs.addTab(self.tab_voltmeter, "Voltmètre")
-        self.tabs.addTab(self.tab_logger, "Enregistreur")
+        # --- Catégorie 1 : Oscilloscope (pas de sous-onglets) ---
+        self.tabs.addTab(self.tab_osc, "📡 Oscillo")
         
+        # --- Catégorie 2 : Générateurs (3 sous-onglets) ---
+        self.sub_tabs_gen = QTabWidget()
+        self.sub_tabs_gen.setStyleSheet(_sub_tab_style)
+        self.sub_tabs_gen.addTab(self.tab_gen, "Réf W1")
+        self.sub_tabs_gen.addTab(self.tab_custom_gen, "W1 / W2")
+        self.sub_tabs_gen.addTab(self.tab_ai, "🤖 IA")
+        self.tabs.addTab(self.sub_tabs_gen, "⚡ Générateurs")
+        
+        # --- Catégorie 3 : Analyse (3 sous-onglets) ---
+        self.sub_tabs_analysis = QTabWidget()
+        self.sub_tabs_analysis.setStyleSheet(_sub_tab_style)
+        self.sub_tabs_analysis.addTab(self.tab_spectrum, "Spectre FFT")
+        self.sub_tabs_analysis.addTab(self.tab_xy, "Vue XY")
+        self.sub_tabs_analysis.addTab(self.tab_math, "Math & Réf")
+        self.tabs.addTab(self.sub_tabs_analysis, "📊 Analyse")
+        
+        # --- Catégorie 4 : Instruments (2 sous-onglets) ---
+        self.sub_tabs_instr = QTabWidget()
+        self.sub_tabs_instr.setStyleSheet(_sub_tab_style)
+        self.sub_tabs_instr.addTab(self.tab_voltmeter, "Voltmètre")
+        self.sub_tabs_instr.addTab(self.tab_multimeter, "Multimètre")
+        self.tabs.addTab(self.sub_tabs_instr, "🔬 Instruments")
+        
+        # --- Catégorie 5 : Enregistreur (pas de sous-onglets) ---
+        self.tabs.addTab(self.tab_logger, "💾 Enregistreur")
+        
+        # --- Initialisation de toutes les pages ---
         self.setup_oscilloscope_tab()
         self.setup_generator_tab()
         self.setup_custom_generators_tab()
@@ -107,14 +211,15 @@ class OscilloscopeUI(QWidget):
         self.setup_xy_tab()
         self.setup_math_tab()
         self.setup_voltmeter_tab()
+        self.setup_multimeter_tab()
         self.setup_logger_tab()
         self.setup_ai_tab()
         
         self.splitter.addWidget(self.graph_container)
         self.splitter.addWidget(self.tabs)
         
-        # Définir la largeur du panneau de droite à 360px (1200 - 360 = 840)
-        self.splitter.setSizes([840, 360])
+        # Définir la largeur du panneau de droite à 380px
+        self.splitter.setSizes([820, 380])
         
         main_layout.addWidget(self.splitter, 1)
         
@@ -124,6 +229,27 @@ class OscilloscopeUI(QWidget):
         self.lbl_copyright.setStyleSheet("color: #444; font-size: 9px; padding: 2px 10px; background-color: #121212;")
         main_layout.addWidget(self.lbl_copyright, 0)
         
+    def get_active_page(self):
+        """Retourne le widget de la page réellement visible (résout les sous-onglets)."""
+        current = self.tabs.currentWidget()
+        if isinstance(current, QTabWidget):
+            return current.currentWidget()
+        return current
+    
+    def navigate_to(self, page_widget):
+        """Navigue vers une page spécifique, même si elle est dans un sous-onglet."""
+        for i in range(self.tabs.count()):
+            tab = self.tabs.widget(i)
+            if tab is page_widget:
+                self.tabs.setCurrentIndex(i)
+                return
+            if isinstance(tab, QTabWidget):
+                for j in range(tab.count()):
+                    if tab.widget(j) is page_widget:
+                        self.tabs.setCurrentIndex(i)
+                        tab.setCurrentIndex(j)
+                        return
+
     def setup_oscilloscope_tab(self):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
@@ -185,6 +311,28 @@ class OscilloscopeUI(QWidget):
         
         group_time.setLayout(layout_time)
         layout.addWidget(group_time)
+        
+        # Groupe: Performance et Rendu
+        group_perf = QGroupBox("Performance du Rendu")
+        layout_perf = QVBoxLayout()
+        
+        h_quality_row = QHBoxLayout()
+        h_quality_row.addWidget(QLabel("Qualité / FPS :"))
+        from PyQt6.QtWidgets import QSlider
+        self.slider_quality = QSlider(Qt.Orientation.Horizontal)
+        self.slider_quality.setRange(1, 5)
+        self.slider_quality.setValue(3)
+        self.slider_quality.setTickPosition(QSlider.TickPosition.TicksBelow)
+        self.slider_quality.setTickInterval(1)
+        self.slider_quality.setToolTip("1 = Max FPS (peu de détail) / 5 = Max Qualité (peut être lent)")
+        h_quality_row.addWidget(self.slider_quality)
+        self.lbl_quality_val = QLabel("3 (Normal)")
+        self.lbl_quality_val.setStyleSheet("color: #5bc0de; font-weight: bold; min-width: 80px;")
+        h_quality_row.addWidget(self.lbl_quality_val)
+        layout_perf.addLayout(h_quality_row)
+        
+        group_perf.setLayout(layout_perf)
+        layout.addWidget(group_perf)
         
         # Groupe: Réglages Canaux (Axe Y)
         group_volt = QGroupBox("Réglages des Canaux (Vertical)")
@@ -977,3 +1125,80 @@ class OscilloscopeUI(QWidget):
         main_tab_layout = QVBoxLayout(self.tab_ai)
         main_tab_layout.setContentsMargins(0, 0, 0, 0)
         main_tab_layout.addWidget(scroll_area)
+
+    def setup_multimeter_tab(self):
+        layout = QVBoxLayout()
+        
+        style_val = "font-family: 'Consolas', 'Courier New'; font-size: 32px; font-weight: bold; color: #5bc0de; background-color: #111; border: 1px solid #333; border-radius: 8px; padding: 15px;"
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        content = QWidget()
+        l_content = QVBoxLayout(content)
+        
+        # --- Section Ohmmètre ---
+        group_ohm = QGroupBox("📏 Mesure de Résistance (Ohmmètre)")
+        group_ohm.setStyleSheet("QGroupBox { font-weight: bold; color: #5bc0de; border: 1px solid #5bc0de; margin-top: 10px; } QGroupBox::title { subcontrol-origin: margin; left: 10px; }")
+        l_ohm = QVBoxLayout()
+        
+        self.lbl_ohm_val = QLabel("--- Ω")
+        self.lbl_ohm_val.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_ohm_val.setStyleSheet(style_val)
+        l_ohm.addWidget(self.lbl_ohm_val)
+        
+        # Sélecteur de Gamme
+        l_range = QHBoxLayout()
+        l_range.addWidget(QLabel("Gamme de mesure :"))
+        self.combo_ohm_range = QComboBox()
+        self.combo_ohm_range.addItems(["Basse (0 Ω - 5 kΩ)", "Haute (50 kΩ - 10 MΩ)"])
+        self.combo_ohm_range.setToolTip("Le mode 'Haute' utilise l'impédance d'entrée de 1 MΩ de l'oscilloscope.")
+        l_range.addWidget(self.combo_ohm_range)
+        l_ohm.addLayout(l_range)
+        
+        self.btn_run_ohm = QPushButton("Démarrer l'Ohmmètre")
+        self.btn_run_ohm.setCheckable(True)
+        self.btn_run_ohm.setStyleSheet("background-color: #333; color: #5bc0de; font-weight: bold; padding: 10px; border: 1px solid #5bc0de;")
+        l_ohm.addWidget(self.btn_run_ohm)
+        
+        # Indicateur de continuité
+        self.lbl_continuity = QLabel("Continuité : ---")
+        self.lbl_continuity.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_continuity.setStyleSheet("font-weight: bold; padding: 5px; background: #222; border-radius: 4px;")
+        l_ohm.addWidget(self.lbl_continuity)
+        
+        group_ohm.setLayout(l_ohm)
+        l_content.addWidget(group_ohm)
+        
+        # --- Section Voltmètre DC Rapide ---
+        group_v = QGroupBox("⚡ Voltmètre DC (Canal 1)")
+        l_v = QVBoxLayout()
+        self.lbl_multi_v = QLabel("0.000 V")
+        self.lbl_multi_v.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_multi_v.setStyleSheet(style_val.replace("#5bc0de", "#5cb85c"))
+        l_v.addWidget(self.lbl_multi_v)
+        group_v.setLayout(l_v)
+        l_content.addWidget(group_v)
+        
+        # --- Guide de Câblage ---
+        group_wires = QGroupBox("📌 Instructions de Câblage")
+        l_wires = QVBoxLayout()
+        self.lbl_ohm_instr = QLabel(
+            "<b>Mode Basse Résistance :</b><br>"
+            "• <b>W1 (Jaune)</b> et <b>1+ (Orange)</b> sur un côté.<br>"
+            "• <b>GND (Noir)</b> sur l'autre côté.<br><br>"
+            "<b>Mode Haute Résistance (> 50kΩ) :</b><br>"
+            "• <b>W1 (Jaune)</b> sur un côté.<br>"
+            "• <b>1+ (Orange)</b> sur l'autre côté.<br>"
+            "• <b>1- (Bleu/Blanc)</b> relié au <b>GND (Noir)</b>."
+        )
+        self.lbl_ohm_instr.setStyleSheet("color: #aaa; font-size: 11px;")
+        l_wires.addWidget(self.lbl_ohm_instr)
+        group_wires.setLayout(l_wires)
+        l_content.addWidget(group_wires)
+        
+        l_content.addStretch(1)
+        scroll_area.setWidget(content)
+        l_main = QVBoxLayout(self.tab_multimeter)
+        l_main.setContentsMargins(0, 0, 0, 0)
+        l_main.addWidget(scroll_area)
