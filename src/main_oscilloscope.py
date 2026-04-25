@@ -12,10 +12,13 @@ import csv
 import urllib.request
 import webbrowser
 import threading
+import zipfile
+import shutil
+import tempfile
 from datetime import datetime
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QFileDialog, QSplashScreen, QProgressBar, 
-                             QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QMessageBox, QMainWindow)
+                             QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QMessageBox, QMainWindow, QLabel)
 from PyQt6.QtGui import QIcon, QPixmap, QFont
 from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, QObject, pyqtSignal, pyqtSlot
 import pyqtgraph as pg
@@ -867,7 +870,124 @@ class OscilloscopeApp(QObject):
         """)
 
         if msg.exec() == QMessageBox.StandardButton.Yes:
-            webbrowser.open(self.DOWNLOAD_URL)
+            self.start_automated_update()
+
+    def start_automated_update(self):
+        """Lance le processus de téléchargement et d'installation automatique."""
+        self.progress = QProgressBar()
+        self.progress_dialog = QDialog(self.ui)
+        self.progress_dialog.setWindowTitle("Installation de la mise à jour")
+        self.progress_dialog.setFixedWidth(400)
+        
+        layout = QVBoxLayout(self.progress_dialog)
+        layout.addWidget(QLabel("Téléchargement de la nouvelle version en cours..."))
+        self.progress_label = QLabel("0%")
+        layout.addWidget(self.progress_label)
+        layout.addWidget(self.progress)
+        
+        self.progress_dialog.show()
+        
+        # Thread pour le téléchargement
+        threading.Thread(target=self._download_update_thread, daemon=True).start()
+
+    def _download_update_thread(self):
+        try:
+            temp_dir = tempfile.gettempdir()
+            zip_path = os.path.join(temp_dir, "ADALM2000_update.zip")
+            
+            import ssl
+            context = ssl._create_unverified_context()
+            
+            req = urllib.request.Request(self.DOWNLOAD_URL, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=context) as response:
+                total_size = int(response.info().get('Content-Length', 0))
+                downloaded = 0
+                block_size = 8192
+                
+                with open(zip_path, 'wb') as f:
+                    while True:
+                        buffer = response.read(block_size)
+                        if not buffer:
+                            break
+                        downloaded += len(buffer)
+                        f.write(buffer)
+                        
+                        if total_size > 0:
+                            percent = int(downloaded * 100 / total_size)
+                            QMetaObject.invokeMethod(self, "_update_download_progress",
+                                                   Qt.ConnectionType.QueuedConnection,
+                                                   Q_ARG(int, percent))
+            
+            QMetaObject.invokeMethod(self, "_finalize_update",
+                                   Qt.ConnectionType.QueuedConnection,
+                                   Q_ARG(str, zip_path))
+        except Exception as e:
+            print(f"Erreur téléchargement : {e}")
+            QMetaObject.invokeMethod(self, "_on_update_error",
+                                   Qt.ConnectionType.QueuedConnection,
+                                   Q_ARG(str, str(e)))
+
+    @pyqtSlot(int)
+    def _update_download_progress(self, percent):
+        if hasattr(self, 'progress'):
+            self.progress.setValue(min(percent, 100))
+            self.progress_label.setText(f"{percent}%")
+
+    @pyqtSlot(str)
+    def _on_update_error(self, error_msg):
+        self.progress_dialog.close()
+        QMessageBox.critical(self.ui, "Erreur de mise à jour", f"Le téléchargement a échoué :\n{error_msg}")
+
+    @pyqtSlot(str)
+    def _finalize_update(self, zip_path):
+        """Extrait la mise à jour et lance le script de remplacement."""
+        try:
+            self.progress_label.setText("Extraction et préparation...")
+            self.progress.setRange(0, 0) # Mode indéterminé
+            
+            app_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.getcwd()
+            extract_dir = os.path.join(tempfile.gettempdir(), "ADALM2000_extracted")
+            
+            if os.path.exists(extract_dir):
+                shutil.rmtree(extract_dir)
+            os.makedirs(extract_dir)
+            
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+            
+            # Déterminer le nom de l'exécutable
+            exe_name = os.path.basename(sys.executable)
+            
+            # Créer un script batch pour effectuer le remplacement après la fermeture
+            batch_path = os.path.join(tempfile.gettempdir(), "update_script.bat")
+            
+            # Script batch intelligent : 
+            # 1. Attend que l'app se ferme
+            # 2. Copie les fichiers (en gérant les sous-dossiers si présents dans le zip)
+            # 3. Relance l'app
+            # 4. S'auto-supprime
+            
+            # On vérifie si le zip contient un dossier racine (souvent le cas)
+            source_path = extract_dir
+            contents = os.listdir(extract_dir)
+            if len(contents) == 1 and os.path.isdir(os.path.join(extract_dir, contents[0])):
+                source_path = os.path.join(extract_dir, contents[0])
+
+            with open(batch_path, "w", encoding="cp1252") as f:
+                f.write("@echo off\n")
+                f.write("echo Mise a jour en cours, veuillez patienter...\n")
+                f.write("timeout /t 2 /nobreak > nul\n")
+                # /S /E /Y /I pour copier récursivement et écraser
+                f.write(f'xcopy /s /e /y /i "{source_path}\\*" "{app_dir}\\"\n')
+                f.write(f'start "" "{os.path.join(app_dir, exe_name)}"\n')
+                f.write(f'del "{batch_path}"\n')
+            
+            # Lancer le batch et quitter
+            subprocess.Popen(["cmd.exe", "/c", batch_path], shell=True)
+            self.app.quit()
+            
+        except Exception as e:
+            self._on_update_error(str(e))
 
     def update_ohmmeter_instructions(self, index):
         # On ne change pas le texte ici pour éviter de tout réécrire, 
