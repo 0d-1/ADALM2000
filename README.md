@@ -41,9 +41,17 @@ Contrairement aux outils traditionnels, **ADALM2000 Laboratory** intègre un ass
 
 ## 🚀 Démarrage Rapide
 
-### 1️⃣ Installation Automatique (Windows)
-Double-cliquez sur **`Installer_ADALM2000.bat`**. 
-L'installeur gère l'installation de Python, des drivers `libm2k` et des dépendances (`numpy`, `PyQt6`, `pyqtgraph`).
+### 1️⃣ Installation (Version Portable .exe)
+Des exécutables prêts à l'emploi sont générés automatiquement pour chaque nouvelle version. **Aucune installation de Python n'est requise.**
+1. Rendez-vous sur la page des [Releases GitHub](https://github.com/0d-1/ADALM2000/releases/latest).
+2. Téléchargez le fichier `.zip` adapté à votre processeur :
+   * `ADALM2000_Oscilloscope_Windows_x64.zip` (Pour la majorité des PC Intel/AMD)
+   * `ADALM2000_Oscilloscope_Windows_ARM64.zip` (Pour Surface Pro X, Snapdragon X Elite, PC Copilot+)
+3. Extrayez le dossier et double-cliquez sur l'exécutable.
+*(Si les drivers matériels ADALM2000 ne sont pas présents, le logiciel vous proposera de les installer).*
+
+### 2️⃣ Installation depuis les sources (Scripts Python)
+Si vous souhaitez lancer le code source directement, lancez le script **`Lancer_Oscilloscope.bat`**. Le script installera automatiquement les dépendances Python manquantes (PyQt6, numpy, etc.).
 
 ### 2️⃣ Utilisation de l'IA
 1. Rendez-vous dans l'onglet **🤖 IA**.
@@ -57,6 +65,17 @@ L'installeur gère l'installation de Python, des drivers `libm2k` et des dépend
 *   **Matériel** : Analog Devices ADALM2000.
 *   **Logiciel** : Python 3.9+, PyQt6, Pyqtgraph, Libm2k.
 *   **AI Backend** : API Groq (Modèles Llama 3.3, 3.1).
+
+---
+
+## 📦 Construction de l'Exécutable
+
+Pour créer vous-même la version `.exe` autonome (via PyInstaller) :
+1. Double-cliquez sur **`Construire_Executable_MultiArch.bat`**.
+2. Le script détectera automatiquement votre architecture processeur.
+3. Il générera la version correspondante (`x64` ou `ARM64`) dans le dossier `dist/`.
+
+> **Note GitHub Actions** : À chaque nouveau tag `v*` poussé sur GitHub (ex: `v1.2`), le pipeline d'intégration (CI) compile automatiquement les versions x64 et ARM64 et crée une nouvelle Release publique.
 
 ---
 
