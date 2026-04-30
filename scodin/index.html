@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ADALM2000 Laboratory - Instrumentation Pro by IA</title>
+    <meta name="description" content="Une plateforme d'instrumentation professionnelle pour ADALM2000, propulsée par l'IA (Llama 3.3).">
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="background-effects">
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+</div>
+
+<div class="container">
+    <header>
+        <div class="logo">ADALM2000 <span class="highlight">Lab</span></div>
+        <a href="../index.php" class="nav-link">Retour au Portail VDS</a>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="badge-container">
+                <div class="badge">Propulsé par Llama 3.3 & Groq</div>
+                <div class="badge version-badge" id="version-badge">Recherche de la dernière version...</div>
+            </div>
+            <h1>L'Oscilloscope Augmenté par <span class="text-gradient">l'IA</span></h1>
+            <p>Une plateforme d'instrumentation professionnelle pour le module Analog Devices ADALM2000, offrant une expérience de laboratoire révolutionnaire grâce à l'intelligence artificielle.</p>
+            
+            <div class="download-section">
+                <div id="loading-downloads" class="loading-spinner">Connexion à GitHub...</div>
+                
+                <div id="download-buttons" class="cta-group hidden">
+                    <div class="download-card primary">
+                        <div class="dl-icon">🚀</div>
+                        <div class="dl-info">
+                            <span class="dl-title">Version x64</span>
+                            <span class="dl-desc">Pour PC classiques (Intel / AMD)</span>
+                        </div>
+                        <a href="#" id="dl-x64" class="download-btn">Télécharger</a>
+                    </div>
+
+                    <div class="download-card secondary">
+                        <div class="dl-icon">⚡</div>
+                        <div class="dl-info">
+                            <span class="dl-title">Version ARM64</span>
+                            <span class="dl-desc">Pour Snapdragon X / Surface Pro X</span>
+                        </div>
+                        <a href="#" id="dl-arm64" class="download-btn alt">Télécharger</a>
+                    </div>
+                </div>
+                
+                <div class="source-link">
+                    <a href="https://github.com/0d-1/ADALM2000" target="_blank" rel="noopener" class="github-link">
+                        <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" class="css-i6dzq1"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg>
+                        Voir le Code Source sur GitHub
+                    </a>
+                </div>
+            </div>
+            
+            <div class="mockup-container">
+                <div class="glass-reflection"></div>
+                <img src="mockup_ai.png" alt="Interface ADALM2000 Laboratory AI-Powered">
+            </div>
+        </section>
+
+        <section id="ai-features" class="ai-highlight">
+            <div class="section-head">
+                <h2 class="text-gradient-purple">L'IA au Cœur du Signal</h2>
+                <p>Contrairement aux outils traditionnels, ADALM2000 Laboratory intègre un assistant intelligent pour une interaction sans précédent avec votre matériel.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card glass-card">
+                    <div class="icon-wrapper">💬</div>
+                    <h3>Pilotage Naturel</h3>
+                    <p>Configurez votre matériel par la voix ou le texte. "Génère une sinusoïde de 1kHz avec une amplitude de 2V" suffit pour agir.</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="icon-wrapper">🧬</div>
+                    <h3>Prototypage NumPy</h3>
+                    <p>Demandez des signaux sophistiqués (Chirps, modulations, ECG) et l'IA écrit le code NumPy optimal en temps réel.</p>
+                </div>
+                <div class="feature-card glass-card">
+                    <div class="icon-wrapper">👁️</div>
+                    <h3>Prévisualisation IA</h3>
+                    <p>Visualisez instantanément la réponse théorique générée par l'IA avant de l'envoyer physiquement sur les sorties W1/W2.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="precision-features">
+            <div class="section-head">
+                <h2>Fonctionnalités Principales</h2>
+                <p>Une suite complète d'outils d'analyse et de contrôle pour les ingénieurs et les étudiants.</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card glass-card">
+                    <h3>📊 Analyses</h3>
+                    <ul>
+                        <li>Oscilloscope 2 canaux (30+ FPS)</li>
+                        <li>Analyseur de Spectre (FFT)</li>
+                        <li>Voltmètre Intelligent (RMS, Vpp)</li>
+                        <li>Analyse de Lissajous (XY)</li>
+                    </ul>
+                </div>
+                <div class="feature-card glass-card">
+                    <h3>⚙️ Contrôle</h3>
+                    <ul>
+                        <li>Générateur AWG (W1, W2)</li>
+                        <li>Trigger Logiciel avec Hystérésis</li>
+                        <li>Outils de Mesure (Curseurs)</li>
+                        <li>Filtre "Squelch" anti-bruit</li>
+                    </ul>
+                </div>
+                <div class="feature-card glass-card">
+                    <h3>💾 Données</h3>
+                    <ul>
+                        <li>Data Logger (Export CSV)</li>
+                        <li>Captures PNG Haute Résolution</li>
+                        <li>Snapshots & Références</li>
+                        <li>Sauvegarde d'état complète</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="quick-start">
+            <div class="guide glass-card">
+                <h2 style="text-align: center; margin-bottom: 40px;">🚀 Démarrage Rapide</h2>
+                
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Installation Automatique</h3>
+                        <p>Téléchargez et décompressez l'archive, puis exécutez l'installeur pour configurer Python et les drivers.</p>
+                        <div class="code-block">Double-cliquez sur : <span class="highlight">Installer_ADALM2000.bat</span></div>
+                    </div>
+                </div>
+
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Configuration de l'IA</h3>
+                        <p>Rendez-vous dans l'onglet <strong>🤖 IA</strong> de l'application et entrez votre clé API Groq (gratuite).</p>
+                    </div>
+                </div>
+
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Explorez</h3>
+                        <p>Décrivez votre besoin : "Génère un signal ECG simulé à 60 BPM" ou "Simule une décharge de condensateur".</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="tech-specs" style="text-align: center; padding-top: 0;">
+            <p style="font-size: 0.9em; opacity: 0.5;">
+                <strong>Stack Technique :</strong> Python 3.9+ | PyQt6 | Pyqtgraph | Libm2k | API Groq (Llama 3.3)
+            </p>
+        </section>
+    </main>
+
+    <footer>
+        <p>&copy; 2024-2026 Odin De Baerdemaker - L'innovation au service de l'électronique.</p>
+    </footer>
+</div>
+
+<script>
+    // Script pour récupérer la dernière release GitHub
+    document.addEventListener("DOMContentLoaded", async () => {
+        const githubApiUrl = "https://api.github.com/repos/0d-1/ADALM2000/releases/latest";
+        
+        try {
+            const response = await fetch(githubApiUrl);
+            if (!response.ok) throw new Error("Erreur lors de la récupération des données GitHub");
+            
+            const release = await response.json();
+            
+            // Mettre à jour le badge de version
+            const versionBadge = document.getElementById("version-badge");
+            versionBadge.textContent = "Version actuelle : " + release.tag_name;
+            versionBadge.classList.add("loaded");
+            
+            // Trouver les assets pour x64 et ARM64
+            let x64Url = "";
+            let arm64Url = "";
+            
+            release.assets.forEach(asset => {
+                if (asset.name.toLowerCase().includes("x64")) {
+                    x64Url = asset.browser_download_url;
+                } else if (asset.name.toLowerCase().includes("arm64")) {
+                    arm64Url = asset.browser_download_url;
+                }
+            });
+            
+            // Mettre à jour les liens
+            if (x64Url) {
+                document.getElementById("dl-x64").href = x64Url;
+            } else {
+                document.getElementById("dl-x64").parentElement.style.opacity = 0.5;
+                document.getElementById("dl-x64").textContent = "Indisponible";
+                document.getElementById("dl-x64").style.pointerEvents = "none";
+            }
+            
+            if (arm64Url) {
+                document.getElementById("dl-arm64").href = arm64Url;
+            } else {
+                document.getElementById("dl-arm64").parentElement.style.opacity = 0.5;
+                document.getElementById("dl-arm64").textContent = "Indisponible";
+                document.getElementById("dl-arm64").style.pointerEvents = "none";
+            }
+            
+            // Détection basique de l'architecture pour mettre en évidence le bon bouton
+            const userAgent = navigator.userAgent.toLowerCase();
+            if (userAgent.includes("arm") || userAgent.includes("aarch64")) {
+                document.getElementById("dl-arm64").parentElement.classList.add("recommended");
+                document.querySelector("#dl-arm64").parentElement.querySelector(".dl-title").innerHTML += " <span class='rec-badge'>Recommandé</span>";
+            } else {
+                // Par défaut, x64 est recommandé pour la majorité des PC Windows
+                document.getElementById("dl-x64").parentElement.classList.add("recommended");
+                document.querySelector("#dl-x64").parentElement.querySelector(".dl-title").innerHTML += " <span class='rec-badge'>Recommandé</span>";
+            }
+            
+            // Cacher le loader et montrer les boutons
+            document.getElementById("loading-downloads").style.display = "none";
+            const btnGroup = document.getElementById("download-buttons");
+            btnGroup.classList.remove("hidden");
+            
+        } catch (error) {
+            console.error(error);
+            document.getElementById("loading-downloads").textContent = "Erreur de connexion à GitHub. Veuillez réessayer.";
+            document.getElementById("loading-downloads").style.color = "#ff6b6b";
+        }
+    });
+</script>
+
+</body>
+</html>

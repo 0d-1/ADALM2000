@@ -15,6 +15,7 @@ import threading
 import zipfile
 import shutil
 import tempfile
+import platform
 from datetime import datetime
 import numpy as np
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QFileDialog, QSplashScreen, QProgressBar, 
@@ -71,8 +72,6 @@ class ExportSettingsDialog(QDialog):
 
 class OscilloscopeApp(QObject):
     VERSION = "2.1.0"
-    UPDATE_URL = "https://voie-du-savoir.go.yj.fr/scodin/version.txt"
-    DOWNLOAD_URL = "https://voie-du-savoir.go.yj.fr/scodin/ADALM2000_Oscilloscope.zip"
 
     def __init__(self): 
         super().__init__()
@@ -1151,24 +1150,25 @@ oLink.Save
                     self.ui.lbl_continuity.setStyleSheet("color: #d9534f; font-weight: bold;")
 
     def check_for_updates(self):
-        """Vérifie si une nouvelle version est disponible sur le serveur."""
+        """Vérifie si une nouvelle version est disponible directement sur GitHub."""
         try:
-            # On attend que l'application soit totalement lancée (après le splash screen de 5s)
+            # On attend que l'application soit totalement lancée (après le splash screen)
             time.sleep(7)
             
-            # Utilisation d'un User-Agent pour éviter les blocages serveurs
-            req = urllib.request.Request(self.UPDATE_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            
-            # Certains certificats SSL sur des hébergements gratuits peuvent poser problème
             import ssl
             context = ssl._create_unverified_context()
             
+            github_api = "https://api.github.com/repos/0d-1/ADALM2000/releases/latest"
+            req = urllib.request.Request(github_api, headers={'User-Agent': 'Mozilla/5.0 (ADALM2000-App)'})
+            
             with urllib.request.urlopen(req, timeout=10, context=context) as response:
-                raw_data = response.read().decode('utf-8').strip()
-                # On ne garde que les chiffres et les points (enlève d'éventuels caractères BOM ou cachés)
-                online_version = "".join(c for c in raw_data if c.isdigit() or c == '.')
+                release_data = json.loads(response.read().decode('utf-8'))
                 
-                print(f"DEBUG MAJ : Locale='{self.VERSION}', Serveur='{online_version}'")
+                # Le tag name est souvent de la forme "v1.4.0"
+                tag_name = release_data.get('tag_name', '')
+                online_version = "".join(c for c in tag_name if c.isdigit() or c == '.')
+                
+                print(f"DEBUG MAJ : Locale='{self.VERSION}', GitHub='{online_version}'")
                 
                 # Comparaison numérique (ex: [1, 3, 1] > [1, 3, 0])
                 try:
@@ -1241,8 +1241,39 @@ oLink.Save
             import ssl
             context = ssl._create_unverified_context()
             
-            req = urllib.request.Request(self.DOWNLOAD_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, context=context) as response:
+            # 1. Obtenir l'URL de la dernière release depuis GitHub API
+            github_api = "https://api.github.com/repos/0d-1/ADALM2000/releases/latest"
+            req_api = urllib.request.Request(github_api, headers={'User-Agent': 'Mozilla/5.0'})
+            
+            download_url = None
+            is_arm = platform.machine().lower() in ['arm64', 'aarch64']
+            
+            with urllib.request.urlopen(req_api, context=context) as response:
+                release_data = json.loads(response.read().decode('utf-8'))
+                
+                # Chercher le bon asset selon l'architecture
+                for asset in release_data.get('assets', []):
+                    name = asset.get('name', '').lower()
+                    if is_arm and 'arm64' in name:
+                        download_url = asset.get('browser_download_url')
+                        break
+                    elif not is_arm and 'x64' in name:
+                        download_url = asset.get('browser_download_url')
+                        break
+                
+                # Fallback sur le premier fichier .zip si rien ne matche parfaitement
+                if not download_url:
+                    for asset in release_data.get('assets', []):
+                        if asset.get('name', '').endswith('.zip'):
+                            download_url = asset.get('browser_download_url')
+                            break
+                            
+            if not download_url:
+                raise Exception("Impossible de trouver le lien de téléchargement sur GitHub.")
+                
+            # 2. Télécharger le fichier ZIP
+            req_dl = urllib.request.Request(download_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req_dl, context=context) as response:
                 total_size = int(response.info().get('Content-Length', 0))
                 downloaded = 0
                 block_size = 8192
