@@ -1,0 +1,146 @@
+name: Build ADALM2000 Executables
+
+on:
+  push:
+    tags:
+      - 'v*'          # Se déclenche sur les tags : v1.0, v1.2.3, etc.
+  workflow_dispatch:  # Permet aussi de lancer manuellement depuis GitHub
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Build x86-64 (PC Intel/AMD classique)
+  # ──────────────────────────────────────────────
+  build-x64:
+    name: Build Windows x64
+    runs-on: windows-latest   # Runner GitHub x86-64
+
+    steps:
+      - name: Cloner le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.11 (x64)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: 'x64'
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller PyQt6 pyqtgraph numpy
+
+      - name: Construire l'exe x64
+        run: python -m PyInstaller ADALM2000.spec --noconfirm
+
+      - name: Copier config.json si présent
+        run: |
+          if (Test-Path "src\config.json") {
+            Copy-Item "src\config.json" "dist\ADALM2000_Oscilloscope_x64\_internal\config.json" -Force
+          }
+
+      - name: Zipper le dossier x64
+        run: |
+          Compress-Archive -Path "dist\ADALM2000_Oscilloscope_x64" `
+            -DestinationPath "ADALM2000_Oscilloscope_Windows_x64.zip"
+
+      - name: Uploader l'artefact x64
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADALM2000_Windows_x64
+          path: ADALM2000_Oscilloscope_Windows_x64.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # Build ARM64 (Surface Pro X, Snapdragon X, etc.)
+  # ──────────────────────────────────────────────
+  build-arm64:
+    name: Build Windows ARM64
+    runs-on: windows-11-arm   # Runner GitHub ARM64 natif
+
+    steps:
+      - name: Cloner le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python 3.11 (ARM64 natif)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          # Pas besoin de spécifier architecture : le runner est natif ARM64
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller PyQt6 pyqtgraph numpy
+
+      - name: Construire l'exe ARM64
+        run: python -m PyInstaller ADALM2000_ARM64.spec --noconfirm
+
+      - name: Copier config.json si présent
+        run: |
+          if (Test-Path "src\config.json") {
+            Copy-Item "src\config.json" "dist\ADALM2000_Oscilloscope_ARM64\_internal\config.json" -Force
+          }
+
+      - name: Zipper le dossier ARM64
+        run: |
+          Compress-Archive -Path "dist\ADALM2000_Oscilloscope_ARM64" `
+            -DestinationPath "ADALM2000_Oscilloscope_Windows_ARM64.zip"
+
+      - name: Uploader l'artefact ARM64
+        uses: actions/upload-artifact@v4
+        with:
+          name: ADALM2000_Windows_ARM64
+          path: ADALM2000_Oscilloscope_Windows_ARM64.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # Publier une Release GitHub avec les deux .zip
+  # (seulement si déclenché par un tag v*)
+  # ──────────────────────────────────────────────
+  release:
+    name: Publier la Release GitHub
+    needs: [build-x64, build-arm64]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    permissions:
+      contents: write   # Nécessaire pour créer une release
+
+    steps:
+      - name: Télécharger l'artefact x64
+        uses: actions/download-artifact@v4
+        with:
+          name: ADALM2000_Windows_x64
+          path: release-files/
+
+      - name: Télécharger l'artefact ARM64
+        uses: actions/download-artifact@v4
+        with:
+          name: ADALM2000_Windows_ARM64
+          path: release-files/
+
+      - name: Créer la Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "ADALM2000 Oscilloscope ${{ github.ref_name }}"
+          body: |
+            ## ADALM2000 Oscilloscope ${{ github.ref_name }}
+
+            ### Téléchargements
+
+            | Version | Architecture | Pour qui ? |
+            |---|---|---|
+            | `ADALM2000_Oscilloscope_Windows_x64.zip` | x86-64 | PC Intel / AMD classique (majorité des PC) |
+            | `ADALM2000_Oscilloscope_Windows_ARM64.zip` | ARM64 | Surface Pro X, Snapdragon X Elite, etc. |
+
+            ### Installation
+            1. Téléchargez le `.zip` correspondant à votre processeur
+            2. Extrayez le dossier
+            3. Double-cliquez sur `ADALM2000_Oscilloscope_xxx.exe`
+            4. Si le driver ADALM2000 n'est pas installé, le logiciel vous le proposera automatiquement.
+
+            > **Pas sûr de votre processeur ?** Allez dans *Paramètres → Système → Informations système*.  
+            > Si vous voyez "ARM" dans le nom du processeur → prenez ARM64. Sinon → prenez x64.
+          files: release-files/*
+          draft: false
+          prerelease: false

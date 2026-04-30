@@ -9,13 +9,11 @@ import time
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
 class DataAcquisitionThread(QThread):
-    # Utilisation de 'object' pour passer les numpy array rapidement sans copies
-    data_ready = pyqtSignal(object)
-
-    def __init__(self, ain, samples_to_read):
+    def __init__(self, ain, samples_to_read, callback):
         super().__init__()
         self.ain = ain
         self.samples_to_read = samples_to_read
+        self.callback = callback
         self.running = False
 
     def run(self):
@@ -26,6 +24,8 @@ class DataAcquisitionThread(QThread):
         chunks_ch1 = []
         chunks_ch2 = []
         accumulated = 0
+        consecutive_errors = 0
+        MAX_CONSECUTIVE_ERRORS = 5
         
         while self.running:
             try:
@@ -33,21 +33,28 @@ class DataAcquisitionThread(QThread):
                 data = self.ain.getSamples(chunk_size)
                 
                 if data and len(data) > 0 and len(data[0]) > 0:
-                    chunks_ch1.append(data[0])
+                    ch1_data = np.asarray(data[0], dtype=np.float64)
+                    # Clamp des valeurs extrêmes (protection contre les spikes matériels)
+                    np.clip(ch1_data, -25.0, 25.0, out=ch1_data)
+                    chunks_ch1.append(ch1_data)
+                    
                     # S'il y a un 2e canal activé
                     if len(data) > 1 and len(data[1]) > 0:
-                        chunks_ch2.append(data[1])
+                        ch2_data = np.asarray(data[1], dtype=np.float64)
+                        np.clip(ch2_data, -25.0, 25.0, out=ch2_data)
+                        chunks_ch2.append(ch2_data)
                     else:
                         chunks_ch2.append(np.zeros(len(data[0]))) # Fallback si pb
 
                     accumulated += len(data[0])
+                    consecutive_errors = 0  # Réinitialiser le compteur d'erreurs
                     
                     # On émet quand on a nos 0.1s de données
                     if accumulated >= self.samples_to_read:
                         y_data_ch1 = np.concatenate(chunks_ch1)
                         y_data_ch2 = np.concatenate(chunks_ch2)
-                        # Retourne un tuple (ch1, ch2)
-                        self.data_ready.emit((y_data_ch1, y_data_ch2))
+                        # Appel du callback direct plutôt que d'émettre un signal Qt
+                        self.callback((y_data_ch1, y_data_ch2))
                         chunks_ch1 = []
                         chunks_ch2 = []
                         accumulated = 0
@@ -56,8 +63,20 @@ class DataAcquisitionThread(QThread):
                 time.sleep(0.001)
                 
             except Exception as e:
-                print("Erreur de lecture dans le thread:", e)
-                break
+                consecutive_errors += 1
+                print(f"Erreur de lecture dans le thread ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}")
+                
+                # Vider les buffers partiels corrompus
+                chunks_ch1 = []
+                chunks_ch2 = []
+                accumulated = 0
+                
+                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+                    print("FATAL: Trop d'erreurs consécutives, arrêt du thread d'acquisition.")
+                    break
+                
+                # Attente progressive avant de réessayer (backoff exponentiel)
+                time.sleep(min(0.1 * (2 ** consecutive_errors), 2.0))
                 
     def stop(self):
         self.running = False
@@ -164,17 +183,19 @@ class M2kController(QObject):
         if not self.ctx:
             return
 
-        self.ain.setSampleRate(self.sample_rate)
+        actual_rate = self.ain.setSampleRate(self.sample_rate)
+        if actual_rate and actual_rate != self.sample_rate:
+            print(f"M2kController: ATTENTION - Fréquence d'échantillonnage demandée: {self.sample_rate}, obtenue: {actual_rate}")
+            self.sample_rate = int(actual_rate)
         self.ain.enableChannel(0, True)
         self.ain.enableChannel(1, True) # Activation Channel 2
         
-        # Acquisition d'astuces : on lit des blocs de 0.1s pour Fluidité et Réactivité
-        samples_to_read = int(self.sample_rate * 0.1)
+        # Acquisition d'astuces : on lit des blocs de ~33ms pour 30 FPS réels
+        samples_to_read = int(self.sample_rate / 30)
         
-        self.worker_thread = DataAcquisitionThread(self.ain, samples_to_read)
-        self.worker_thread.data_ready.connect(callback)
+        self.worker_thread = DataAcquisitionThread(self.ain, samples_to_read, callback)
         self.worker_thread.start()
-        print("M2kController: Acquisition démarrée en arrière-plan.")
+        print(f"M2kController: Acquisition démarrée en arrière-plan ({self.sample_rate} SPS effectifs).")
 
     def disconnect_device(self):
         if self.worker_thread:

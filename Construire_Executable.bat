@@ -1,7 +1,12 @@
 @echo off
 REM ====================================================================
-REM   ADALM2000 Laboratory - Constructeur d'Executable Autonome
+REM   ADALM2000 Laboratory - Constructeur d'Executable Autonome (x86-64)
 REM   Copyright (c) 2024-2026 Odin De Baerdemaker - Tous droits reserves
+REM
+REM   Ce script construit la version x86-64 (PC Intel/AMD classique).
+REM   Pour construire automatiquement la version adaptee a votre
+REM   processeur (x86-64 ou ARM64), utilisez :
+REM     Construire_Executable_MultiArch.bat
 REM ====================================================================
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
@@ -88,8 +93,8 @@ if exist "build" (
 ) else (
     set "WORK_OPT="
 )
-if exist "dist\ADALM2000_Oscilloscope" (
-    rmdir /s /q "dist\ADALM2000_Oscilloscope" >nul 2>&1
+if exist "dist\ADALM2000_Oscilloscope_x64" (
+    rmdir /s /q "dist\ADALM2000_Oscilloscope_x64" >nul 2>&1
 )
 echo.
 
@@ -110,7 +115,7 @@ if errorlevel 1 (
 
 REM --- 6. Copier config.json si existant ---
 if exist "src\config.json" (
-    copy /Y "src\config.json" "dist\ADALM2000_Oscilloscope\_internal\config.json" >nul 2>&1
+    copy /Y "src\config.json" "dist\ADALM2000_Oscilloscope_x64\_internal\config.json" >nul 2>&1
     echo  [OK] config.json copie dans le dossier de distribution.
 )
 
@@ -120,10 +125,10 @@ echo           CONSTRUCTION REUSSIE !
 echo  ========================================================
 echo.
 echo  L'executable est pret dans :
-echo    dist\ADALM2000_Oscilloscope\ADALM2000_Oscilloscope.exe
+echo    dist\ADALM2000_Oscilloscope_x64\ADALM2000_Oscilloscope_x64.exe
 echo.
 echo  Pour distribuer : copiez tout le dossier
-echo  "dist\ADALM2000_Oscilloscope" sur une cle USB ou zip.
+echo  "dist\ADALM2000_Oscilloscope_x64" sur une cle USB ou zip.
 echo.
 echo  Vos amis n'ont qu'a double-cliquer sur le .exe !
 echo  Le driver ADALM2000 sera propose automatiquement

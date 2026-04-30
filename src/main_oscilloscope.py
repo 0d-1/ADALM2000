@@ -70,18 +70,28 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "1.3.2"
+    VERSION = "2.1.0"
     UPDATE_URL = "https://voie-du-savoir.go.yj.fr/scodin/version.txt"
     DOWNLOAD_URL = "https://voie-du-savoir.go.yj.fr/scodin/ADALM2000_Oscilloscope.zip"
 
-    def __init__(self):
+    def __init__(self): 
         super().__init__()
         self.app = QApplication.instance() or QApplication(sys.argv)
         
         # --- App Icon Logic ---
         # Utilise _BASE_DIR qui gère automatiquement le mode .exe et le mode script
         self._script_dir = _BASE_DIR
-        self.config_file = os.path.join(self._script_dir, "config.json")
+        
+        # --- Dossier de données utilisateur persistant (%APPDATA%) ---
+        # Les données utilisateur (clé API, calibration, historique) sont stockées
+        # dans %APPDATA%/ADALM2000_ProStation/ pour survivre aux mises à jour.
+        self._user_data_dir = os.path.join(
+            os.environ.get('APPDATA', os.path.expanduser('~')),
+            'ADALM2000_ProStation'
+        )
+        os.makedirs(self._user_data_dir, exist_ok=True)
+        self.config_file = os.path.join(self._user_data_dir, "config.json")
+        self._migrate_old_config()  # Migration depuis l'ancien emplacement si nécessaire
         icon_path = self.load_icon_path()
         if icon_path and os.path.exists(icon_path):
             self.app.setWindowIcon(QIcon(icon_path))
@@ -142,11 +152,13 @@ class OscilloscopeApp(QObject):
         self.y_history_ch1 = np.zeros(self.buffer_size, dtype=np.float32) # float32 pour l'économie de RAM
         self.y_history_ch2 = np.zeros(self.buffer_size, dtype=np.float32)
         self.ptr = 0 # Pointeur du buffer circulaire
-        self.frame_count = 0 
+        self.frame_count = 0
+        self.data_lock = threading.Lock() # Lock pour protéger le buffer circulaire
         
         # Calibration matérielle
         self.auto_zero_ch1 = 0.0
         self.auto_zero_ch2 = 0.0
+        self.load_auto_zero()
         
         # Pre-allocation de l'onde globale
         self.t_master = np.linspace(0, self.total_time, self.buffer_size, endpoint=False)
@@ -169,6 +181,7 @@ class OscilloscopeApp(QObject):
         # --- IA Signal Generator ---
         self.ai_generator = AISignalGenerator()
         self.ai_current_signal = None  # Signal numpy en prévisualisation
+        self._ai_signals_history = []  # Historique des signaux générés
         self._load_ai_api_key()  # Charger la clé API depuis config.json
 
         from PyQt6.QtCore import QTimer
@@ -181,6 +194,7 @@ class OscilloscopeApp(QObject):
         self.ui.chk_auto_y.stateChanged.connect(self.update_y_range)
         self.ui.spin_bpm.valueChanged.connect(self.change_bpm)
         self.ui.btn_auto_zero.clicked.connect(self.run_auto_zero)
+        self.ui.btn_auto_zero_osc.clicked.connect(self.run_auto_zero)
         
         # Connexions Exportation
         self.ui.btn_color_bg.clicked.connect(self.choose_bg_color)
@@ -212,6 +226,7 @@ class OscilloscopeApp(QObject):
         self.ui.btn_ai_apply_w2.clicked.connect(lambda: self.on_ai_apply(1))
         self.ui.txt_api_key.editingFinished.connect(self.on_ai_api_key_changed)
         self.ui.spin_ai_preview_scale.valueChanged.connect(self.update_ai_preview_scale)
+        self.ui.combo_ai_history.currentIndexChanged.connect(self.on_ai_history_selected)
         
         # Signaux de mouvement des curseurs
         self.ui.v_cursor1.sigPositionChanged.connect(self.update_cursors_measure)
@@ -231,6 +246,7 @@ class OscilloscopeApp(QObject):
         
         # Connexions Navigation Graphe
         self.ui.btn_recenter.clicked.connect(self.recenter_view)
+        self.ui.btn_recenter_adapt.clicked.connect(self.recenter_and_adapt)
         self.ui.slider_quality.valueChanged.connect(self.on_quality_changed)
         # Détecter le pan/zoom manuel de l'utilisateur sur le graphique
         self.ui.plot_widget.sigRangeChanged.connect(self._on_user_range_changed)
@@ -265,6 +281,143 @@ class OscilloscopeApp(QObject):
             
         self.ui.show()
         splash.finish(self.ui)
+        
+        # Vérification du raccourci (500ms après l'ouverture de la fenêtre principale)
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(500, self._check_version_for_shortcut)
+
+    def _check_version_for_shortcut(self):
+        """Vérifie s'il faut proposer/actualiser le raccourci (1er lancement ou mise à jour)."""
+        if sys.platform != "win32":
+            return
+            
+        try:
+            config = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r") as f:
+                    config = json.load(f)
+            
+            last_version = config.get("last_version", "")
+            if last_version != self.VERSION:
+                is_update = (last_version != "")
+                self.prompt_create_shortcut(is_update)
+                
+                config["last_version"] = self.VERSION
+                with open(self.config_file, "w") as f:
+                    json.dump(config, f, indent=2)
+        except Exception as e:
+            print(f"Erreur vérification version raccourci : {e}")
+
+    def _migrate_old_config(self):
+        """Migre les fichiers de config de l'ancien emplacement (src/) vers %APPDATA%."""
+        try:
+            old_config = os.path.join(self._script_dir, "config.json")
+            old_history = os.path.join(self._script_dir, "ai_history.json")
+            
+            # Migration config.json (fusionner avec l'existant si déjà présent)
+            if os.path.exists(old_config) and not os.path.exists(self.config_file):
+                print(f"Migration config : {old_config} -> {self.config_file}")
+                with open(old_config, "r") as f:
+                    old_data = json.load(f)
+                # Ne pas migrer icon_path car il est relatif au dossier d'installation
+                old_data.pop("icon_path", None)
+                with open(self.config_file, "w") as f:
+                    json.dump(old_data, f, indent=2)
+            elif os.path.exists(old_config) and os.path.exists(self.config_file):
+                # Fusionner : garder les clés APPDATA en priorité, compléter depuis l'ancien
+                with open(self.config_file, "r") as f:
+                    new_data = json.load(f)
+                with open(old_config, "r") as f:
+                    old_data = json.load(f)
+                old_data.pop("icon_path", None)
+                for key, val in old_data.items():
+                    if key not in new_data:
+                        new_data[key] = val
+                with open(self.config_file, "w") as f:
+                    json.dump(new_data, f, indent=2)
+            
+            # Migration ai_history.json
+            new_history = os.path.join(self._user_data_dir, "ai_history.json")
+            if os.path.exists(old_history) and not os.path.exists(new_history):
+                print(f"Migration historique IA : {old_history} -> {new_history}")
+                shutil.copy2(old_history, new_history)
+        except Exception as e:
+            print(f"Erreur migration config : {e}")
+
+    def prompt_create_shortcut(self, is_update=False):
+        """Propose de créer un raccourci, ou le met à jour silencieusement s'il existe déjà."""
+        try:
+            import tempfile
+            import subprocess
+            
+            if getattr(sys, 'frozen', False):
+                target_path = sys.executable
+                work_dir = os.path.dirname(sys.executable)
+                arguments = ""
+            else:
+                target_path = sys.executable
+                work_dir = os.path.dirname(os.path.abspath(__file__))
+                arguments = f'"{os.path.abspath(__file__)}"'
+                
+            # Vérifier si le raccourci existe déjà via VBScript
+            vbs_check = '''
+Set oWS = WScript.CreateObject("WScript.Shell")
+sLinkFile = oWS.SpecialFolders("Desktop") & "\\ADALM2000 Pro Station.lnk"
+Dim FSO
+Set FSO = CreateObject("Scripting.FileSystemObject")
+If FSO.FileExists(sLinkFile) Then
+    WScript.Quit 1
+Else
+    WScript.Quit 0
+End If
+'''
+            check_path = os.path.join(tempfile.gettempdir(), "check_sc.vbs")
+            with open(check_path, "w") as f:
+                f.write(vbs_check)
+                
+            result = subprocess.run(["cscript.exe", "//Nologo", check_path], capture_output=True)
+            exists = (result.returncode == 1)
+            
+            create_it = False
+            if exists and is_update:
+                create_it = True # Actualiser silencieusement
+            else:
+                msg = QMessageBox(self.ui)
+                msg.setWindowTitle("Raccourci Bureau")
+                msg.setIcon(QMessageBox.Icon.Question)
+                if is_update:
+                    msg.setText("L'application a été mise à jour.\nVoulez-vous ajouter ou actualiser un raccourci sur le bureau ?")
+                else:
+                    msg.setText("Installation terminée.\nVoulez-vous ajouter un raccourci sur le bureau ?")
+                msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                msg.setStyleSheet("QMessageBox { background-color: #121212; color: white; } QLabel { color: #e0e0e0; } QPushButton { background-color: #333; color: white; padding: 6px 15px; border-radius: 4px; } QPushButton:hover { background-color: #444; }")
+                
+                if msg.exec() == QMessageBox.StandardButton.Yes:
+                    create_it = True
+                    
+            if create_it:
+                icon_path = self.load_icon_path()
+                if not icon_path or not os.path.exists(icon_path):
+                    icon_path = target_path # Fallback
+                
+                vbs_args = arguments.replace('"', '""')
+                vbs_create = f'''
+Set oWS = WScript.CreateObject("WScript.Shell")
+sLinkFile = oWS.SpecialFolders("Desktop") & "\\ADALM2000 Pro Station.lnk"
+Set oLink = oWS.CreateShortcut(sLinkFile)
+oLink.TargetPath = "{target_path}"
+oLink.Arguments = "{vbs_args}"
+oLink.WorkingDirectory = "{work_dir}"
+oLink.IconLocation = "{icon_path}"
+oLink.Save
+'''
+                create_path = os.path.join(tempfile.gettempdir(), "create_sc.vbs")
+                with open(create_path, "w") as f:
+                    f.write(vbs_create)
+                subprocess.run(["cscript.exe", "//Nologo", create_path], shell=True)
+                
+        except Exception as e:
+            print(f"Erreur création raccourci : {e}")
 
     def run(self):
         """Lance la boucle principale de l'application."""
@@ -347,7 +500,22 @@ class OscilloscopeApp(QObject):
             self.controller.generate_base_signal(self.ui.spin_bpm.value())
             self.controller.start_acquisition(self.on_new_data)
             
-            self.ui.lbl_status.setText("Statut : Connecté (En ligne)")
+            # Synchroniser le sample_rate avec le taux réel du matériel
+            if self.sample_rate != self.controller.sample_rate:
+                print(f"Sync sample_rate: {self.sample_rate} -> {self.controller.sample_rate}")
+                self.sample_rate = self.controller.sample_rate
+                # Recalculer les buffers dépendants
+                self.buffer_size = int(self.sample_rate * self.total_time)
+                with self.data_lock:
+                    self.y_history_ch1 = np.zeros(self.buffer_size, dtype=np.float32)
+                    self.y_history_ch2 = np.zeros(self.buffer_size, dtype=np.float32)
+                    self.ptr = 0
+                self.t_master = np.linspace(0, self.total_time, self.buffer_size, endpoint=False)
+                self.y_ideal_master = np.zeros(self.buffer_size, dtype=np.float32)
+                self.zoom_samples = int(self.sample_rate * self.zoom_time)
+                self.update_ideal_signal(self.ui.spin_bpm.value())
+            
+            self.ui.lbl_status.setText(f"Statut : Connecté ({self.sample_rate} SPS)")
             self.ui.lbl_status.setStyleSheet("color: #5cb85c; font-weight: bold; font-size: 14px;")
             print("Connexion réussie !")
         except Exception as e:
@@ -357,13 +525,22 @@ class OscilloscopeApp(QObject):
             self.ui.lbl_status.setStyleSheet("color: #d9534f; font-weight: bold; font-size: 14px;")
             
     def load_icon_path(self):
+        """Charge le chemin de l'icône depuis le config.json LOCAL (pas APPDATA, car l'icône est embarquée)."""
         try:
+            # L'icône est toujours relative au dossier d'installation
+            local_config = os.path.join(self._script_dir, "config.json")
+            if os.path.exists(local_config):
+                with open(local_config, "r") as f:
+                    config = json.load(f)
+                    raw_path = config.get("icon_path", "")
+                    if raw_path:
+                        return os.path.normpath(os.path.join(self._script_dir, raw_path))
+            # Fallback : chercher dans le config APPDATA (migration)
             if os.path.exists(self.config_file):
                 with open(self.config_file, "r") as f:
                     config = json.load(f)
                     raw_path = config.get("icon_path", "")
                     if raw_path:
-                        # Resolve relative paths from the script's directory
                         return os.path.normpath(os.path.join(self._script_dir, raw_path))
         except:
             pass
@@ -420,13 +597,40 @@ class OscilloscopeApp(QObject):
         if not self.ui._user_panned:
             self.ui._user_panned = True
             self.ui.btn_recenter.show()
+            self.ui.btn_recenter_adapt.show()
     
     def recenter_view(self):
         """Remet la vue centrée et ajustée automatiquement."""
         self.ui._user_panned = False
         self.ui.btn_recenter.hide()
+        self.ui.btn_recenter_adapt.hide()
         self._apply_auto_range()
     
+    def recenter_and_adapt(self):
+        """Recentrer la vue et ajuster les échelles X et Y selon la vue actuelle."""
+        vb = self.ui.plot_widget.getViewBox()
+        range_x = vb.viewRange()[0]
+        
+        x_min = max(0, range_x[0])
+        x_max = range_x[1]
+        
+        new_time = x_max - x_min
+        if new_time > 0.0001:
+            # On applique la modification du H_pos et du Time/Div
+            self.ui.spin_h_pos.setValue(self.ui.spin_h_pos.value() + x_min)
+            
+            # Bloquer les signaux pour éviter de déclencher de multiples update_plot
+            self.ui.spin_time.blockSignals(True)
+            self.ui.spin_time.setValue(new_time)
+            self.zoom_time = new_time
+            self.zoom_samples = int(self.sample_rate * self.zoom_time)
+            self.zoom_samples = min(self.zoom_samples, self.buffer_size)
+            self.ui.spin_time.blockSignals(False)
+            
+        self.ui.chk_auto_y.setChecked(True)
+        self.recenter_view()
+        self.update_plot()
+        
     def on_quality_changed(self, value):
         """Met à jour le nombre max de points de rendu selon le slider."""
         self._max_render_points = self._quality_map.get(value, 200000)
@@ -440,10 +644,19 @@ class OscilloscopeApp(QObject):
             v_max = max(v1, v2)
             self._ignore_range_signal = True
             self.ui.plot_widget.setYRange(-v_max, v_max)
+            # Désactiver l'auto-range Y de pyqtgraph
+            self.ui.plot_widget.plotItem.vb.enableAutoRange(axis=pg.ViewBox.YAxis, enable=False)
             self._ignore_range_signal = False
+            
             # Recentrer si on change via le panneau
             if not self.ui._user_panned:
                 self.ui.btn_recenter.hide()
+                self.ui.btn_recenter_adapt.hide()
+        else:
+            # Activer l'auto-range Y de pyqtgraph
+            self._ignore_range_signal = True
+            self.ui.plot_widget.plotItem.vb.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+            self._ignore_range_signal = False
 
     def change_voltage(self, value):
         # Cette méthode est gardée pour compatibilité si appelée ailleurs
@@ -458,26 +671,62 @@ class OscilloscopeApp(QObject):
     def run_auto_zero(self):
         """Calibrage automatique du 0V pour compenser le DC Offset de l'ADALM2000"""
         lookback = int(self.sample_rate * 0.1) # 100ms de données pour moyenner
-        ch1, ch2 = self.get_latest_data(lookback)
+        segments = self.get_latest_data(lookback)
+        ch1 = np.concatenate([s[0] for s in segments])
+        ch2 = np.concatenate([s[1] for s in segments])
         if len(ch1) > 0 and len(ch2) > 0:
             self.auto_zero_ch1 = -float(np.mean(ch1))
             self.auto_zero_ch2 = -float(np.mean(ch2))
             print(f"Auto-Zero appliqué: CH1={self.auto_zero_ch1:.4f}V, CH2={self.auto_zero_ch2:.4f}V")
             self.ui.lbl_status.setText(f"Statut : Zéro Calibré (C1={self.auto_zero_ch1*1000:.0f}mV, C2={self.auto_zero_ch2*1000:.0f}mV)")
             self.ui.lbl_status.setStyleSheet("color: #5bc0de; font-weight: bold; font-size: 14px;")
+            self.save_auto_zero()
+
+    def load_auto_zero(self):
+        try:
+            if os.path.exists(self.config_file):
+                import json
+                with open(self.config_file, "r") as f:
+                    config = json.load(f)
+                    self.auto_zero_ch1 = float(config.get("auto_zero_ch1", 0.0))
+                    self.auto_zero_ch2 = float(config.get("auto_zero_ch2", 0.0))
+        except:
+            pass
+
+    def save_auto_zero(self):
+        try:
+            import json
+            config = {}
+            if os.path.exists(self.config_file):
+                with open(self.config_file, "r") as f:
+                    config = json.load(f)
+            config["auto_zero_ch1"] = self.auto_zero_ch1
+            config["auto_zero_ch2"] = self.auto_zero_ch2
+            with open(self.config_file, "w") as f:
+                json.dump(config, f, indent=2)
+        except:
+            pass
 
     def run_autoset(self):
         """Algorithme d'ajustement automatique des échelles"""
         lookback = int(self.sample_rate * 0.1) # 100ms de données
-        ch1, ch2 = self.get_latest_data(lookback)
+        segments = self.get_latest_data(lookback)
+        ch1 = np.concatenate([s[0] for s in segments])
         
         # Canal 1
         if self.ui.chk_ch1.isChecked():
             vpp1 = np.ptp(ch1)
             if vpp1 > 0.05:
+                # Libérer les signaux le temps de changer
+                self.ui.spin_v_div_ch1.blockSignals(True)
+                self.ui.spin_offset_ch1.blockSignals(True)
+                
                 vdiv = vpp1 / 4.0
                 self.ui.spin_v_div_ch1.setValue(vdiv)
                 self.ui.spin_offset_ch1.setValue(-np.mean(ch1))
+                
+                self.ui.spin_v_div_ch1.blockSignals(False)
+                self.ui.spin_offset_ch1.blockSignals(False)
                 
                 # Temps : estimer la fréquence
                 zero_cross = np.where(np.diff(np.sign(ch1 - np.mean(ch1))))[0]
@@ -508,7 +757,9 @@ class OscilloscopeApp(QObject):
         if file_path:
             # Récupérer les données affichées actuellement
             lookback = self.zoom_samples
-            ch1, ch2 = self.get_latest_data(lookback)
+            segments = self.get_latest_data(lookback)
+            ch1 = np.concatenate([s[0] for s in segments])
+            ch2 = np.concatenate([s[1] for s in segments])
             t = np.linspace(0, self.zoom_time, len(ch1), endpoint=False)
             
             try:
@@ -535,59 +786,106 @@ class OscilloscopeApp(QObject):
         if not self.is_running:
             return
 
-        # Écriture instantanée dans le buffer O(1)
-        y_ch1, y_ch2 = new_data
-        n = len(y_ch1)
-        if n == 0:
-            return
-            
-        end_ptr = self.ptr + n
-        if end_ptr <= self.buffer_size:
-            self.y_history_ch1[self.ptr:end_ptr] = y_ch1
-            self.y_history_ch2[self.ptr:end_ptr] = y_ch2
-        else:
-            overflow = end_ptr - self.buffer_size
-            self.y_history_ch1[self.ptr:] = y_ch1[:-overflow]
-            self.y_history_ch1[:overflow] = y_ch1[-overflow:]
-            
-            self.y_history_ch2[self.ptr:] = y_ch2[:-overflow]
-            self.y_history_ch2[:overflow] = y_ch2[-overflow:]
-            
-        self.ptr = (self.ptr + n) % self.buffer_size
-        # ATTENTION: On ne déclenche plus update_plot ici pour éviter le freeze.
+        try:
+            # Écriture instantanée dans le buffer O(1)
+            y_ch1, y_ch2 = new_data
+            n = len(y_ch1)
+            if n == 0:
+                return
+                
+            # Protection contre les NaN, infinis et valeurs extrêmes (spikes matériels)
+            y_ch1 = np.nan_to_num(y_ch1, nan=0.0, posinf=5.0, neginf=-5.0)
+            y_ch2 = np.nan_to_num(y_ch2, nan=0.0, posinf=5.0, neginf=-5.0)
+            np.clip(y_ch1, -25.0, 25.0, out=y_ch1)
+            np.clip(y_ch2, -25.0, 25.0, out=y_ch2)
+
+            with self.data_lock:
+                end_ptr = self.ptr + n
+                if end_ptr <= self.buffer_size:
+                    self.y_history_ch1[self.ptr:end_ptr] = y_ch1
+                    self.y_history_ch2[self.ptr:end_ptr] = y_ch2
+                else:
+                    overflow = end_ptr - self.buffer_size
+                    self.y_history_ch1[self.ptr:] = y_ch1[:-overflow]
+                    self.y_history_ch1[:overflow] = y_ch1[-overflow:]
+                    
+                    self.y_history_ch2[self.ptr:] = y_ch2[:-overflow]
+                    self.y_history_ch2[:overflow] = y_ch2[-overflow:]
+                    
+                self.ptr = (self.ptr + n) % self.buffer_size
+            # ATTENTION: On ne déclenche plus update_plot ici pour éviter le freeze.
+        except Exception as e:
+            print(f"Erreur dans on_new_data (données ignorées): {e}")
 
     def get_latest_data(self, nb_samples):
-        if self.ptr >= nb_samples:
-            return (self.y_history_ch1[self.ptr - nb_samples : self.ptr],
-                    self.y_history_ch2[self.ptr - nb_samples : self.ptr])
-        else:
-            p1 = self.buffer_size - (nb_samples - self.ptr)
-            return (np.concatenate((self.y_history_ch1[p1:], self.y_history_ch1[:self.ptr])),
-                    np.concatenate((self.y_history_ch2[p1:], self.y_history_ch2[:self.ptr])))
+        """Retourne les données les plus récentes sous forme de COPIES thread-safe."""
+        nb_samples = min(nb_samples, self.buffer_size)
+        with self.data_lock:
+            if self.ptr >= nb_samples:
+                return [(self.y_history_ch1[self.ptr - nb_samples : self.ptr].copy(),
+                         self.y_history_ch2[self.ptr - nb_samples : self.ptr].copy())]
+            else:
+                p1 = max(0, self.buffer_size - (nb_samples - self.ptr))
+                seg1_ch1 = self.y_history_ch1[p1:].copy()
+                seg1_ch2 = self.y_history_ch2[p1:].copy()
+                if self.ptr > 0:
+                    seg2_ch1 = self.y_history_ch1[:self.ptr].copy()
+                    seg2_ch2 = self.y_history_ch2[:self.ptr].copy()
+                    return [(seg1_ch1, seg1_ch2), (seg2_ch1, seg2_ch2)]
+                else:
+                    return [(seg1_ch1, seg1_ch2)]
 
-    def fast_downsample(self, y_arr, max_points=None):
-        """Downsampling adapté au slider qualité et à l'échelle visible."""
+    def fast_downsample(self, segments, max_points=None):
+        """Downsampling qui gère une liste de segments sans les concaténer au préalable.
+        Accepte aussi un seul tableau numpy en entrée (pas forcément une liste)."""
+        # Support entrée unique (tableau numpy brut)
+        if isinstance(segments, np.ndarray):
+            segments = [segments]
+        
         if max_points is None:
             max_points = self._max_render_points
         
-        if len(y_arr) <= max_points:
-            return y_arr
+        # Calcul du nombre total de points
+        total_len = sum(len(s) for s in segments)
+        if total_len == 0:
+            return np.zeros(1, dtype=np.float32)  # Fallback sécurisé
+        
+        if total_len <= max_points:
+            return np.concatenate(segments) if len(segments) > 1 else segments[0]
             
-        factor = len(y_arr) // (max_points // 2)
-        length = (len(y_arr) // factor) * factor
-        y_view = y_arr[:length].reshape(-1, factor)
+        factor = max(1, total_len // max(1, max_points // 2))
         
-        y_min = y_view.min(axis=1)
-        y_max = y_view.max(axis=1)
+        out_parts = []
+        for s in segments:
+            if len(s) < factor: continue
+            length = (len(s) // factor) * factor
+            y_view = s[:length].reshape(-1, factor)
+            
+            y_min = y_view.min(axis=1)
+            y_max = y_view.max(axis=1)
+            
+            env = np.empty(y_min.size * 2, dtype=s.dtype)
+            env[0::2] = y_min
+            env[1::2] = y_max
+            out_parts.append(env)
         
-        env = np.empty(y_min.size * 2, dtype=y_arr.dtype)
-        env[0::2] = y_min
-        env[1::2] = y_max
-        return env
+        # Fallback si tous les segments étaient trop petits pour le facteur
+        if len(out_parts) == 0:
+            return np.concatenate(segments) if len(segments) > 1 else segments[0]
+            
+        return np.concatenate(out_parts) if len(out_parts) > 1 else out_parts[0]
 
     def update_plot(self):
         if not self.is_running:
             return
+        
+        try:
+            self._update_plot_impl()
+        except Exception as e:
+            # Ne jamais laisser une exception tuer le timer de rafraîchissement
+            print(f"Erreur update_plot (frame ignorée): {e}")
+    
+    def _update_plot_impl(self):
         
         # --- Compteur FPS ---
         self._fps_frame_count += 1
@@ -601,86 +899,130 @@ class OscilloscopeApp(QObject):
             
         # Pousser la vue
         lookback_samples = min(self.buffer_size, self.zoom_samples + int(self.sample_rate * 0.1))
-        recent_ch1, recent_ch2 = self.get_latest_data(lookback_samples)
-        
-        start_idx = len(recent_ch1) - self.zoom_samples
-        
+        data_segments = self.get_latest_data(lookback_samples)
         self.frame_count += 1
         
-        # Trigger avec Hystérésis Vectorisé (beaucoup plus rapide !)
-        if self.ui.btn_enable_trigger.isChecked() and self.zoom_time < 0.1:
-            threshold = self.ui.spin_trig_level.value()
-            hyst = self.ui.spin_hysteresis.value()
-            low_thresh = threshold - hyst
-            
-            # Recherche ultra-rapide avec NumPy
-            # On cherche i tel que recent_ch1[i-1] < low_thresh et recent_ch1[i] >= threshold
-            condition = (recent_ch1[:-1] < low_thresh) & (recent_ch1[1:] >= threshold)
-            indices = np.where(condition)[0]
-            
-            if indices.size > 0:
-                # On prend le premier front montant trouvé
-                start_idx = indices[0] + 1
+        # Pour le traitement (trigger, h_pos), on décide si on concatène
+        # On concatène si le volume est faible (< 1M points) pour la simplicité
+        total_samples = sum(len(s[0]) for s in data_segments)
+        if total_samples == 0:
+            return
         
-        # Application du décalage horizontal (Horizontal Position)
-        h_offset_samples = int(self.ui.spin_h_pos.value() * self.sample_rate)
-        start_idx = max(0, min(len(recent_ch1) - self.zoom_samples, start_idx + h_offset_samples))
+        if total_samples < 1000000:
+            recent_ch1 = np.concatenate([s[0] for s in data_segments])
+            recent_ch2 = np.concatenate([s[1] for s in data_segments])
+            
+            n_recent = len(recent_ch1)
+            start_idx = max(0, n_recent - self.zoom_samples)
+            
+            # Trigger
+            if self.ui.btn_enable_trigger.isChecked() and self.zoom_time < 0.1 and n_recent > 2:
+                threshold = self.ui.spin_trig_level.value()
+                hyst = self.ui.spin_hysteresis.value()
+                low_thresh = threshold - hyst
+                condition = (recent_ch1[:-1] < low_thresh) & (recent_ch1[1:] >= threshold)
+                indices = np.where(condition)[0]
+                if indices.size > 0:
+                    # Prendre la dernière occurence valide qui nous laisse assez de buffer pour l'affichage
+                    max_valid = n_recent - self.zoom_samples - 1
+                    if max_valid > 0:
+                        valid_indices = indices[indices <= max_valid]
+                        if valid_indices.size > 0:
+                            start_idx = valid_indices[-1] + 1
+            
+            # Horizontal Position
+            h_offset = int(self.ui.spin_h_pos.value() * self.sample_rate)
+            start_idx = max(0, min(max(0, n_recent - self.zoom_samples), start_idx + h_offset))
+            end_idx = min(start_idx + self.zoom_samples, n_recent)
+            
+            slice_ch1 = recent_ch1[start_idx : end_idx]
+            slice_ch2 = recent_ch2[start_idx : end_idx]
+            # Protection contre les tranches vides
+            if len(slice_ch1) == 0:
+                return
+            final_ch1 = [slice_ch1]
+            final_ch2 = [slice_ch2]
+        else:
+            # Très gros volume : on concatène puis on tranche à zoom_samples pour l'exactitude temporelle
+            all_ch1 = np.concatenate([s[0] for s in data_segments])
+            all_ch2 = np.concatenate([s[1] for s in data_segments])
+            n_all = len(all_ch1)
+            start_idx = max(0, n_all - self.zoom_samples)
+            final_ch1 = [all_ch1[start_idx:]]
+            final_ch2 = [all_ch2[start_idx:]]
 
-        # Application des Offsets et Gains (Sondes)
+        # Calcul du temps réel affiché basé sur le nombre exact d'échantillons
+        actual_samples = sum(len(s) for s in final_ch1)
+        actual_display_time = actual_samples / self.sample_rate if self.sample_rate > 0 else self.zoom_time
+        
+        # Application des Sondes, Offsets et AC Couplage APRES Downsampling
         probe1 = [1, 10, 100][self.ui.combo_probe_ch1.currentIndex()]
         probe2 = [1, 10, 100][self.ui.combo_probe_ch2.currentIndex()]
         
-        raw_display_ch1 = (recent_ch1[start_idx : start_idx + self.zoom_samples] + self.auto_zero_ch1) * probe1
-        raw_display_ch2 = (recent_ch2[start_idx : start_idx + self.zoom_samples] + self.auto_zero_ch2) * probe2
-
-        # Couplage AC Logiciel
+        y_opt_ch1 = self.fast_downsample(final_ch1)
+        if len(y_opt_ch1) == 0:
+            return
         if self.ui.chk_ac_ch1.isChecked():
-            raw_display_ch1 = raw_display_ch1 - np.mean(raw_display_ch1)
-        if self.ui.chk_ac_ch2.isChecked():
-            raw_display_ch2 = raw_display_ch2 - np.mean(raw_display_ch2)
-
-        y_display_ch1 = raw_display_ch1 + self.ui.spin_offset_ch1.value()
-        y_display_ch2 = raw_display_ch2 + self.ui.spin_offset_ch2.value()
+            y_opt_ch1 = y_opt_ch1 - np.mean(y_opt_ch1)  # Copie explicite (pas -=) pour ne pas corrompre le buffer
+        y_display_ch1 = (y_opt_ch1 + self.auto_zero_ch1) * probe1 + self.ui.spin_offset_ch1.value()
         
         if self.ui.chk_ch1.isChecked():
-            y_display_opt_ch1 = self.fast_downsample(y_display_ch1)
-            t_display_opt_1 = np.linspace(0, self.zoom_time, len(y_display_opt_ch1), endpoint=False)
-            self.ui.curve.setData(t_display_opt_1, y_display_opt_ch1)
+            t_display_opt_1 = np.linspace(0, actual_display_time, len(y_display_ch1), endpoint=False)
+            self.ui.curve.setData(t_display_opt_1, y_display_ch1)
             
+        y_opt_ch2 = self.fast_downsample(final_ch2)
+        if len(y_opt_ch2) == 0:
+            return
+        if self.ui.chk_ac_ch2.isChecked():
+            y_opt_ch2 = y_opt_ch2 - np.mean(y_opt_ch2)  # Copie explicite
+        y_display_ch2 = (y_opt_ch2 + self.auto_zero_ch2) * probe2 + self.ui.spin_offset_ch2.value()
+        
         if self.ui.chk_ch2.isChecked():
-            y_display_opt_ch2 = self.fast_downsample(y_display_ch2)
-            t_display_opt_2 = np.linspace(0, self.zoom_time, len(y_display_opt_ch2), endpoint=False)
-            self.ui.curve_ch2.setData(t_display_opt_2, y_display_opt_ch2)
+            t_display_opt_2 = np.linspace(0, actual_display_time, len(y_display_ch2), endpoint=False)
+            self.ui.curve_ch2.setData(t_display_opt_2, y_display_ch2)
         
         # --- Auto-fit si pas en mode navigation libre ---
         if not self.ui._user_panned:
             self._ignore_range_signal = True
-            self.ui.plot_widget.setXRange(0, self.zoom_time, padding=0)
+            self.ui.plot_widget.setXRange(0, actual_display_time, padding=0)
             self._ignore_range_signal = False
         
         # Mise à jour de l'analyseur de spectre (Toutes les 10 frames si onglet actif)
         if self.ui.get_active_page() is self.ui.tab_spectrum: # Onglet Spectre
             if self.frame_count % 10 == 0:
+                # Utiliser les données brutes concaténées pour éviter les artefacts de downsampling sur la FFT
+                if total_samples < 1000000:
+                    raw_ch1 = (final_ch1[0] + self.auto_zero_ch1) * probe1
+                    raw_ch2 = (final_ch2[0] + self.auto_zero_ch2) * probe2
+                else:
+                    raw_ch1 = y_display_ch1 - self.ui.spin_offset_ch1.value() # Fallback sur les données processées sans l'offset d'affichage
+                    raw_ch2 = y_display_ch2 - self.ui.spin_offset_ch2.value()
+                
                 if self.ui.action_roi_fft.isChecked():
                     region = self.ui.roi_fft.getRegion()
                     t_start, t_end = region
-                    idx_start = int((t_start / self.zoom_time) * len(y_display_ch1))
-                    idx_end = int((t_end / self.zoom_time) * len(y_display_ch1))
-                    idx_start = max(0, min(len(y_display_ch1)-10, idx_start))
-                    idx_end = max(idx_start+10, min(len(y_display_ch1), idx_end))
-                    self.update_spectrum(y_display_ch1[idx_start:idx_end], y_display_ch2[idx_start:idx_end])
+                    idx_start = int((t_start / self.zoom_time) * len(raw_ch1))
+                    idx_end = int((t_end / self.zoom_time) * len(raw_ch1))
+                    idx_start = max(0, min(len(raw_ch1)-10, idx_start))
+                    idx_end = max(idx_start+10, min(len(raw_ch1), idx_end))
+                    self.update_spectrum(raw_ch1[idx_start:idx_end], raw_ch2[idx_start:idx_end])
                 else:
-                    self.update_spectrum(y_display_ch1, y_display_ch2)
+                    self.update_spectrum(raw_ch1, raw_ch2)
         
         # Mise à jour du Voltmètre (Toutes les 6 frames si onglet actif)
         if self.ui.get_active_page() is self.ui.tab_voltmeter: # Onglet Voltmeter
             if self.frame_count % 6 == 0:
-                self.update_voltmeter(y_display_ch1, y_display_ch2)
+                if total_samples < 1000000:
+                    self.update_voltmeter((final_ch1[0] + self.auto_zero_ch1) * probe1, (final_ch2[0] + self.auto_zero_ch2) * probe2)
+                else:
+                    # Calcul sur le flux réduit pour la performance si trop de données
+                    self.update_voltmeter(y_display_ch1 - self.ui.spin_offset_ch1.value(), y_display_ch2 - self.ui.spin_offset_ch2.value())
         
         # Mise à jour du Multimètre (Toutes les 6 frames si onglet actif)
         if self.ui.get_active_page() is self.ui.tab_multimeter: # Onglet Multimètre
             if self.frame_count % 6 == 0:
-                self.update_multimeter(y_display_ch1)
+                # Calcul rapide sur le flux optimisé
+                self.update_multimeter(y_display_ch1 - self.ui.spin_offset_ch1.value())
         
         # Mise à jour de la Vue XY
         if self.ui.get_active_page() is self.ui.tab_xy: # Onglet XY
@@ -705,6 +1047,7 @@ class OscilloscopeApp(QObject):
         
         # Enregistrement de données si actif
         if self.is_logging:
+            # On log la moyenne sur la fenêtre actuelle (déjà réduite donc rapide)
             self.process_logging(y_display_ch1, y_display_ch2)
 
         # Générateur idéal
@@ -1196,6 +1539,52 @@ class OscilloscopeApp(QObject):
         except Exception:
             pass
 
+    def _save_ai_history(self):
+        try:
+            history_to_save = []
+            for item in self._ai_signals_history:
+                history_to_save.append({
+                    'prompt': item['prompt'],
+                    'explanation': item['explanation'],
+                    'code': item['code'],
+                    'duration': item['duration']
+                })
+            history_path = os.path.join(self._user_data_dir, "ai_history.json")
+            with open(history_path, "w", encoding='utf-8') as f:
+                json.dump(history_to_save, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Erreur lors de la sauvegarde de l'historique IA : {e}")
+
+    def _load_ai_history(self):
+        try:
+            history_path = os.path.join(self._user_data_dir, "ai_history.json")
+            if os.path.exists(history_path):
+                with open(history_path, "r", encoding='utf-8') as f:
+                    history_loaded = json.load(f)
+                
+                self._ai_signals_history = []
+                sample_rate = self.controller.sample_rate
+                
+                for item in history_loaded:
+                    duration = item.get('duration', 0.01)
+                    n_samples = int(sample_rate * duration)
+                    try:
+                        # Re-générer le signal à partir du code sauvegardé
+                        signal = self.ai_generator._execute_code(item['code'], sample_rate, duration, n_samples)
+                        self._ai_signals_history.append({
+                            'prompt': item.get('prompt', ''),
+                            'explanation': item.get('explanation', ''),
+                            'code': item.get('code', ''),
+                            'signal': signal,
+                            'duration': duration
+                        })
+                    except Exception as e:
+                        print(f"Erreur recréation signal IA depuis historique : {e}")
+                self._update_ai_history_combo()
+        except Exception as e:
+            print(f"Erreur lors du chargement de l'historique IA : {e}")
+
+
     def on_ai_api_key_changed(self):
         """Sauvegarde la clé API dans config.json quand l'utilisateur la modifie."""
         key = self.ui.txt_api_key.text().strip()
@@ -1275,6 +1664,20 @@ class OscilloscopeApp(QObject):
             self.ui.btn_ai_apply_w2.setEnabled(True)
             self.ui.lbl_ai_status.setText(f"✅ Signal généré ({n} échantillons, {duration*1000:.1f} ms)")
             self.ui.lbl_ai_status.setStyleSheet("color: #5cb85c; font-style: normal; font-size: 11px; padding: 4px;")
+            
+            # Ajouter à l'historique
+            history_item = {
+                'prompt': prompt,
+                'explanation': result['explanation'],
+                'code': result['code'],
+                'signal': result['signal'],
+                'duration': duration
+            }
+            self._ai_signals_history.insert(0, history_item)
+            if len(self._ai_signals_history) > 10:
+                self._ai_signals_history.pop()
+            self._update_ai_history_combo()
+            
         else:
             # Afficher l'erreur
             self._ai_append_chat("error", result['error'])
@@ -1303,6 +1706,48 @@ class OscilloscopeApp(QObject):
         self.ui.lbl_ai_status.setText("En attente d'un signal...")
         self.ui.lbl_ai_status.setStyleSheet("color: #888; font-style: italic; font-size: 11px; padding: 4px;")
 
+    def _update_ai_history_combo(self):
+        self.ui.combo_ai_history.blockSignals(True)
+        self.ui.combo_ai_history.clear()
+        self.ui.combo_ai_history.addItem("--- Signaux récents ---")
+        for i, item in enumerate(self._ai_signals_history):
+            text = f"{i+1}. {item['prompt'][:30]}"
+            if len(item['prompt']) > 30: text += "..."
+            self.ui.combo_ai_history.addItem(text)
+        self.ui.combo_ai_history.setCurrentIndex(0)
+        self.ui.combo_ai_history.blockSignals(False)
+
+    def on_ai_history_selected(self, index):
+        if index <= 0 or index > len(self._ai_signals_history):
+            return
+            
+        item = self._ai_signals_history[index - 1]
+        
+        # Restaurer l'interface
+        self.ui.txt_ai_input.setText(item['prompt'])
+        self.ui.lbl_ai_code.setText(item['code'])
+        self.ai_current_signal = item['signal']
+        
+        self.ui.spin_ai_duration.blockSignals(True)
+        self.ui.spin_ai_duration.setValue(item['duration'])
+        self.ui.spin_ai_duration.blockSignals(False)
+        
+        self.ui.spin_ai_preview_scale.blockSignals(True)
+        self.ui.spin_ai_preview_scale.setValue(item['duration'])
+        self.ui.spin_ai_preview_scale.blockSignals(False)
+        
+        self.update_ai_preview_scale()
+        
+        # Auto-range Y
+        y_max = max(abs(self.ai_current_signal.min()), abs(self.ai_current_signal.max()), 0.1)
+        self.ui.ai_preview_plot.setYRange(-y_max * 1.1, y_max * 1.1)
+        
+        self.ui.btn_ai_apply_w1.setEnabled(True)
+        self.ui.btn_ai_apply_w2.setEnabled(True)
+        self.ui.lbl_ai_status.setText(f"✅ Historique chargé ({len(self.ai_current_signal)} pts)")
+        self.ui.lbl_ai_status.setStyleSheet("color: #5cb85c; font-style: normal; font-size: 11px; padding: 4px;")
+        self._ai_append_chat("system", f"Signal restauré depuis l'historique : {item['prompt']}")
+
     def update_ai_preview_scale(self):
         if self.ai_current_signal is None:
             return
@@ -1324,7 +1769,7 @@ class OscilloscopeApp(QObject):
             
         max_display = 4000
         if len(sig_view) > max_display:
-            sig_view_opt = self.fast_downsample(sig_view, max_display)
+            sig_view_opt = self.fast_downsample([sig_view], max_display)
             t_view_opt = np.linspace(0, scale, len(sig_view_opt), endpoint=False)
             self.ui.ai_preview_curve.setData(t_view_opt, sig_view_opt)
         else:

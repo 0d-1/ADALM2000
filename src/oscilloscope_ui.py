@@ -93,6 +93,25 @@ class OscilloscopeUI(QWidget):
         """)
         self.btn_recenter.move(120, 10)
         self.btn_recenter.hide()
+
+        # --- Bouton RECENTRER ET ADAPTER flottant ---
+        self.btn_recenter_adapt = QPushButton("⚡ Recentrer et Adapter", self.plot_widget)
+        self.btn_recenter_adapt.setFixedSize(140, 32)
+        self.btn_recenter_adapt.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(92, 184, 92, 200);
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background-color: rgba(92, 184, 92, 255);
+            }
+        """)
+        self.btn_recenter_adapt.move(240, 10)
+        self.btn_recenter_adapt.hide()
         
         # --- Label FPS flottant ---
         self.lbl_fps = QLabel("-- FPS", self.plot_widget)
@@ -341,6 +360,11 @@ class OscilloscopeUI(QWidget):
         self.btn_autoset = QPushButton("AUTOSET (Calage Auto)")
         self.btn_autoset.setStyleSheet("background-color: #5bc0de; color: white; font-weight: bold; margin-bottom: 5px;")
         layout_volt.addWidget(self.btn_autoset)
+        
+        self.btn_auto_zero_osc = QPushButton("Calibrer le Zéro (Auto-Zero)")
+        self.btn_auto_zero_osc.setStyleSheet("background-color: #f0ad4e; color: white; font-weight: bold; margin-bottom: 5px;")
+        self.btn_auto_zero_osc.setToolTip("Reliez les deux Canaux à la masse (GND) avant de cliquer")
+        layout_volt.addWidget(self.btn_auto_zero_osc)
 
         self.chk_auto_y = QCheckBox("Échelle Y Dynamique (Auto)")
         self.chk_auto_y.setChecked(True)
@@ -973,6 +997,24 @@ class OscilloscopeUI(QWidget):
         l_preview = QVBoxLayout()
         
         h_preview_tools = QHBoxLayout()
+        
+        h_preview_tools.addWidget(QLabel("Historique :"))
+        self.combo_ai_history = QComboBox()
+        self.combo_ai_history.addItem("--- Signaux récents ---")
+        self.combo_ai_history.setStyleSheet("""
+            QComboBox {
+                background-color: #1a1a2e;
+                border: 1px solid #333;
+                border-radius: 4px;
+                padding: 4px;
+                color: #e0e0e0;
+                min-width: 150px;
+            }
+        """)
+        h_preview_tools.addWidget(self.combo_ai_history, stretch=2)
+        
+        h_preview_tools.addSpacing(20)
+        
         h_preview_tools.addWidget(QLabel("Échelle de temps vue (s) :"))
         self.spin_ai_preview_scale = QDoubleSpinBox()
         self.spin_ai_preview_scale.setRange(0.0001, 10.0)
