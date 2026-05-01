@@ -28,7 +28,7 @@ from oscilloscope_ui import OscilloscopeUI
 from m2k_controller import M2kController, LIBM2K_AVAILABLE
 from ai_signal_generator import AISignalGenerator
 
-# --- Support Exécutable Autonome (PyInstaller) ---
+# --- Support Exécutable Autonome (PyInstaller) --
 if getattr(sys, 'frozen', False):
     _BASE_DIR = sys._MEIPASS
 else:
@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.1.0"
+    VERSION = "2.1.1"
 
     def __init__(self): 
         super().__init__()
