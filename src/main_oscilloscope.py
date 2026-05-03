@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.1.3"
+    VERSION = "2.1.4"
 
     def __init__(self): 
         super().__init__()
