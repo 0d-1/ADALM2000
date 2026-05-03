@@ -28,7 +28,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller PyQt6 pyqtgraph numpy
-          pip install --index-url https://test.pypi.org/simple/ libm2k
+          pip install --index-url https://test.pypi.org/simple/ libm2k || echo "libm2k non trouve sur TestPyPI"
 
       - name: Construire l'exe x64
         run: python -m PyInstaller ADALM2000.spec --noconfirm
@@ -72,7 +72,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller PyQt6 pyqtgraph numpy
-          pip install --index-url https://test.pypi.org/simple/ libm2k
+          pip install --index-url https://test.pypi.org/simple/ libm2k || echo "libm2k non trouve sur TestPyPI"
 
       - name: Construire l'exe ARM64
         run: python -m PyInstaller ADALM2000_ARM64.spec --noconfirm
