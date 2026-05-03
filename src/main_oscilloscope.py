@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.1.1"
+    VERSION = "2.1.3"
 
     def __init__(self): 
         super().__init__()
@@ -187,6 +187,9 @@ class OscilloscopeApp(QObject):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
         self.timer.start(33) # ~30 FPS
+        
+        # Connexion Matériel
+        self.controller.connection_lost.connect(self.on_device_disconnected)
         
         # Connexions UI
         self.ui.btn_run_stop.clicked.connect(self.toggle_run)
@@ -486,6 +489,16 @@ oLink.Save
         range_y = vb.viewRange()[1]
         # Position du label en haut à gauche de la vue
         self.ui.measure_label.setPos(range_x[0] + (range_x[1]-range_x[0])*0.05, range_y[1] * 0.9)
+
+    @pyqtSlot()
+    def on_device_disconnected(self):
+        print("OscilloscopeApp: Perte de connexion matérielle détectée.")
+        self.is_running = False
+        self.ui.lbl_status.setText("Statut : Déconnecté (Perte de connexion)")
+        self.ui.lbl_status.setStyleSheet("color: #d9534f; font-weight: bold; font-size: 14px;")
+        self.ui.btn_run_stop.setText("Déconnecté (Cliquer Reconnecter)")
+        self.ui.btn_run_stop.setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; padding: 10px;")
+        self.controller.disconnect_device()
 
     def attempt_connection(self, silent=True):
         if not silent:
@@ -875,14 +888,17 @@ oLink.Save
         return np.concatenate(out_parts) if len(out_parts) > 1 else out_parts[0]
 
     def update_plot(self):
-        if not self.is_running:
+        if not self.is_running or getattr(self, '_is_plotting', False):
             return
         
+        self._is_plotting = True
         try:
             self._update_plot_impl()
         except Exception as e:
             # Ne jamais laisser une exception tuer le timer de rafraîchissement
             print(f"Erreur update_plot (frame ignorée): {e}")
+        finally:
+            self._is_plotting = False
     
     def _update_plot_impl(self):
         

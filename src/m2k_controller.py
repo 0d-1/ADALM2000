@@ -9,6 +9,8 @@ import time
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 
 class DataAcquisitionThread(QThread):
+    connection_lost = pyqtSignal()
+
     def __init__(self, ain, samples_to_read, callback):
         super().__init__()
         self.ain = ain
@@ -47,7 +49,6 @@ class DataAcquisitionThread(QThread):
                         chunks_ch2.append(np.zeros(len(data[0]))) # Fallback si pb
 
                     accumulated += len(data[0])
-                    consecutive_errors = 0  # Réinitialiser le compteur d'erreurs
                     
                     # On émet quand on a nos 0.1s de données
                     if accumulated >= self.samples_to_read:
@@ -63,26 +64,17 @@ class DataAcquisitionThread(QThread):
                 time.sleep(0.001)
                 
             except Exception as e:
-                consecutive_errors += 1
-                print(f"Erreur de lecture dans le thread ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}")
-                
-                # Vider les buffers partiels corrompus
-                chunks_ch1 = []
-                chunks_ch2 = []
-                accumulated = 0
-                
-                if consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
-                    print("FATAL: Trop d'erreurs consécutives, arrêt du thread d'acquisition.")
-                    break
-                
-                # Attente progressive avant de réessayer (backoff exponentiel)
-                time.sleep(min(0.1 * (2 ** consecutive_errors), 2.0))
+                print(f"FATAL: Erreur de lecture matérielle, appareil déconnecté ? ({e})")
+                self.connection_lost.emit()
+                break
                 
     def stop(self):
         self.running = False
         self.wait()
 
 class M2kController(QObject):
+    connection_lost = pyqtSignal()
+
     def __init__(self):
         super().__init__()
         self.ctx = None
@@ -101,6 +93,9 @@ class M2kController(QObject):
         self.ctx = libm2k.m2kOpen()
         if self.ctx is None:
             raise ConnectionError("Impossible de trouver l'ADALM2000. Fermez Scopy et vérifiez le câble USB.")
+            
+        # Timeout de 1 seconde pour éviter les freezes si l'appareil plante ou disparaît du bus USB suite à un pic de tension
+        self.ctx.setTimeout(1000)
         
         self.ctx.calibrateDAC()
         self.ctx.calibrateADC()
@@ -194,6 +189,7 @@ class M2kController(QObject):
         samples_to_read = int(self.sample_rate / 30)
         
         self.worker_thread = DataAcquisitionThread(self.ain, samples_to_read, callback)
+        self.worker_thread.connection_lost.connect(self.connection_lost.emit)
         self.worker_thread.start()
         print(f"M2kController: Acquisition démarrée en arrière-plan ({self.sample_rate} SPS effectifs).")
 
