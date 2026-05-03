@@ -1,9 +1,10 @@
 try:
     import libm2k
     LIBM2K_AVAILABLE = True
-except ImportError:
+except Exception as e:
     libm2k = None
     LIBM2K_AVAILABLE = False
+    print(f"M2kController: Erreur d'importation de libm2k : {e}")
 import numpy as np
 import time
 from PyQt6.QtCore import QObject, pyqtSignal, QThread

@@ -1936,12 +1936,11 @@ def _check_and_install_libm2k():
         QMessageBox.warning(
             None,
             "Driver ADALM2000 manquant",
-            "Le driver ADALM2000 (libm2k) n'est pas installé et\n"
-            "l'installateur n'a pas été trouvé dans le dossier.\n\n"
+            "Le driver ADALM2000 (libm2k) ou ses liaisons Python sont manquants.\n\n"
             "Téléchargez-le depuis :\n"
             "https://github.com/analogdevicesinc/libm2k/releases\n\n"
-            "L'application peut démarrer, mais la connexion\n"
-            "à l'ADALM2000 ne fonctionnera pas."
+            "Note : Sur Windows, installez le setup .exe ET vérifiez que \n"
+            "les drivers USB sont à jour."
         )
     return False
 

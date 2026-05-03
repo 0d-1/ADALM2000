@@ -52,6 +52,7 @@ a = Analysis(
         'oscilloscope_ui',
         'm2k_controller',
         'ai_signal_generator',
+        'libm2k',
     ],
     hookspath=[],
     hooksconfig={},
