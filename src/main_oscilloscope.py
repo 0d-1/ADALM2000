@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.1.6"
+    VERSION = "2.1.7"
 
     def __init__(self): 
         super().__init__()
@@ -134,7 +134,7 @@ class OscilloscopeApp(QObject):
         self.app.processEvents()
 
         self.ui = OscilloscopeUI()
-        self.ui.setWindowTitle(f"SCODIN - ADALM2000 Pro Station [v{self.VERSION}]")
+        self.ui.setWindowTitle(f"SCODIN - [v{self.VERSION}]")
         self.controller = M2kController()
         self.sample_rate = self.controller.sample_rate
         
@@ -532,6 +532,15 @@ oLink.Save
                 self.y_ideal_master = np.zeros(self.buffer_size, dtype=np.float32)
                 self.zoom_samples = int(self.sample_rate * self.zoom_time)
                 self.update_ideal_signal(self.ui.spin_bpm.value())
+            
+            # Restauration de l'état du bouton Play/Pause
+            self.is_running = not self.ui.btn_run_stop.isChecked()
+            if self.is_running:
+                self.ui.btn_run_stop.setText("En cours (Cliquer pour mettre en Pause)")
+                self.ui.btn_run_stop.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")
+            else:
+                self.ui.btn_run_stop.setText("En Pause (Cliquer pour Reprendre)")
+                self.ui.btn_run_stop.setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; padding: 10px;")
             
             self.ui.lbl_status.setText(f"Statut : Connecté ({self.sample_rate} SPS)")
             self.ui.lbl_status.setStyleSheet("color: #5cb85c; font-weight: bold; font-size: 14px;")
