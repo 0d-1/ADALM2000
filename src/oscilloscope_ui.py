@@ -192,6 +192,7 @@ class OscilloscopeUI(QWidget):
         self.tab_multimeter = QWidget()
         self.tab_logger = QWidget()
         self.tab_ai = QWidget()
+        self.tab_math_gen = QWidget()
         
         # --- Catégorie 1 : Oscilloscope (pas de sous-onglets) ---
         self.tabs.addTab(self.tab_osc, "📡 Oscillo")
@@ -200,6 +201,7 @@ class OscilloscopeUI(QWidget):
         self.sub_tabs_gen = QTabWidget()
         self.sub_tabs_gen.setStyleSheet(_sub_tab_style)
         self.sub_tabs_gen.addTab(self.tab_custom_gen, "W1 / W2")
+        self.sub_tabs_gen.addTab(self.tab_math_gen, "f(x)")
         self.sub_tabs_gen.addTab(self.tab_ai, "🤖 IA")
         self.sub_tabs_gen.addTab(self.tab_gen, "Réf")
         self.tabs.addTab(self.sub_tabs_gen, "⚡ Générateurs")
@@ -233,6 +235,7 @@ class OscilloscopeUI(QWidget):
         self.setup_multimeter_tab()
         self.setup_logger_tab()
         self.setup_ai_tab()
+        self.setup_math_generator_tab()
         
         self.splitter.addWidget(self.graph_container)
         self.splitter.addWidget(self.tabs)
@@ -678,6 +681,278 @@ class OscilloscopeUI(QWidget):
         scroll_area.setWidget(content_widget)
         
         main_tab_layout = QVBoxLayout(self.tab_custom_gen)
+        main_tab_layout.setContentsMargins(0, 0, 0, 0)
+        main_tab_layout.addWidget(scroll_area)
+
+    def setup_math_generator_tab(self):
+        layout = QVBoxLayout()
+        
+        # === GROUPE : EXPRESSION MATHÉMATIQUE ===
+        group_expr = QGroupBox("📐 Expression Mathématique")
+        group_expr.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #9b59b6;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #9b59b6;
+            }
+        """)
+        l_expr = QVBoxLayout()
+        
+        lbl_help = QLabel(
+            "<b>Variables :</b> <code>t</code> (temps en s), <code>f</code> (fréquence), <code>A</code> (amplitude), <code>pi</code><br>"
+            "<b>Fonctions :</b> <code>sin, cos, tan, exp, log, abs, sqrt, sign, floor, ceil</code><br>"
+            "<b>Opérateurs :</b> <code>+ - * / ** %</code> &nbsp;|&nbsp; <b>Exemple :</b> <code>A * sin(2*pi*f*t)</code>"
+        )
+        lbl_help.setWordWrap(True)
+        lbl_help.setStyleSheet("font-size: 10px; color: #aaa; background-color: #1a1a2e; border: 1px solid #333; border-radius: 4px; padding: 6px;")
+        l_expr.addWidget(lbl_help)
+        
+        # Modèles prédéfinis
+        h_presets = QHBoxLayout()
+        h_presets.addWidget(QLabel("Modèles :"))
+        self.combo_math_presets = QComboBox()
+        self.combo_math_presets.addItems([
+            "--- Choisir un modèle ---",
+            "Sinus : A * sin(2*pi*f*t)",
+            "Carré : A * sign(sin(2*pi*f*t))",
+            "Triangle : A * (2/pi) * arcsin(sin(2*pi*f*t))",
+            "Dents de scie : A * (2*(t*f - floor(t*f + 0.5)))",
+            "Impulsion : A * (abs(sin(pi*f*t)) < 0.1)",
+            "AM : A * (1 + 0.5*sin(2*pi*10*t)) * sin(2*pi*f*t)",
+            "FM : A * sin(2*pi*f*t + 5*sin(2*pi*2*t))",
+            "Bruit blanc : A * random(t)",
+            "Chirp lin : A * sin(2*pi*(f + 500*t)*t)",
+            "Exponentielle : A * exp(-3*t) * sin(2*pi*f*t)",
+            "Somme harmoniques : A*(sin(2*pi*f*t) + 0.33*sin(6*pi*f*t) + 0.2*sin(10*pi*f*t))",
+            "Sinus redressé : A * abs(sin(2*pi*f*t))",
+            "Escalier : A * floor(4*t*f) / 4",
+        ])
+        self.combo_math_presets.setStyleSheet("""
+            QComboBox {
+                background-color: #1a1a2e;
+                border: 1px solid #9b59b6;
+                border-radius: 4px;
+                padding: 4px;
+                color: #e0e0e0;
+            }
+        """)
+        h_presets.addWidget(self.combo_math_presets, stretch=2)
+        l_expr.addLayout(h_presets)
+        
+        # Champ de saisie de l'expression
+        l_expr.addWidget(QLabel("f(t) ="))
+        self.txt_math_expr = QLineEdit()
+        self.txt_math_expr.setPlaceholderText("A * sin(2*pi*f*t)")
+        self.txt_math_expr.setText("A * sin(2*pi*f*t)")
+        self.txt_math_expr.setStyleSheet("""
+            QLineEdit {
+                background-color: #111;
+                border: 2px solid #9b59b6;
+                border-radius: 6px;
+                padding: 8px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 13px;
+                color: #e8d44d;
+            }
+            QLineEdit:focus {
+                border-color: #c084fc;
+            }
+        """)
+        l_expr.addWidget(self.txt_math_expr)
+        
+        group_expr.setLayout(l_expr)
+        layout.addWidget(group_expr)
+        
+        # === GROUPE : PARAMÈTRES ===
+        group_params = QGroupBox("⚙ Paramètres du Signal")
+        group_params.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #555;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #aaa;
+            }
+        """)
+        l_params = QVBoxLayout()
+        
+        # Fréquence
+        h_freq = QHBoxLayout()
+        h_freq.addWidget(QLabel("Fréquence f (Hz) :"))
+        self.spin_math_freq = QDoubleSpinBox()
+        self.spin_math_freq.setRange(0.01, 200000.0)
+        self.spin_math_freq.setValue(1000.0)
+        self.spin_math_freq.setSuffix(" Hz")
+        self.spin_math_freq.setDecimals(2)
+        h_freq.addWidget(self.spin_math_freq)
+        l_params.addLayout(h_freq)
+        
+        # Amplitude
+        h_amp = QHBoxLayout()
+        h_amp.addWidget(QLabel("Amplitude A (V) :"))
+        self.spin_math_amp = QDoubleSpinBox()
+        self.spin_math_amp.setRange(0.001, 10.0)
+        self.spin_math_amp.setValue(2.0)
+        self.spin_math_amp.setSuffix(" V")
+        self.spin_math_amp.setDecimals(3)
+        h_amp.addWidget(self.spin_math_amp)
+        l_params.addLayout(h_amp)
+        
+        # Offset
+        h_offs = QHBoxLayout()
+        h_offs.addWidget(QLabel("Offset DC (V) :"))
+        self.spin_math_offset = QDoubleSpinBox()
+        self.spin_math_offset.setRange(-5.0, 5.0)
+        self.spin_math_offset.setValue(0.0)
+        self.spin_math_offset.setSingleStep(0.1)
+        self.spin_math_offset.setSuffix(" V")
+        h_offs.addWidget(self.spin_math_offset)
+        l_params.addLayout(h_offs)
+        
+        # Durée du buffer
+        h_dur = QHBoxLayout()
+        h_dur.addWidget(QLabel("Durée du buffer (s) :"))
+        self.spin_math_duration = QDoubleSpinBox()
+        self.spin_math_duration.setRange(0.0001, 5.0)
+        self.spin_math_duration.setValue(0.01)
+        self.spin_math_duration.setDecimals(4)
+        self.spin_math_duration.setSingleStep(0.001)
+        self.spin_math_duration.setSuffix(" s")
+        h_dur.addWidget(self.spin_math_duration)
+        l_params.addLayout(h_dur)
+        
+        # Sortie
+        h_out = QHBoxLayout()
+        h_out.addWidget(QLabel("Sortie :"))
+        self.combo_math_output = QComboBox()
+        self.combo_math_output.addItems(["W1", "W2"])
+        h_out.addWidget(self.combo_math_output)
+        l_params.addLayout(h_out)
+        
+        group_params.setLayout(l_params)
+        layout.addWidget(group_params)
+        
+        # === PRÉVISUALISATION ===
+        group_preview = QGroupBox("👁 Prévisualisation")
+        group_preview.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #555;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #aaa;
+            }
+        """)
+        l_prev = QVBoxLayout()
+        
+        self.math_preview_plot = pg.PlotWidget()
+        self.math_preview_plot.setMinimumHeight(140)
+        self.math_preview_plot.setMaximumHeight(180)
+        self.math_preview_plot.setLabel('left', 'V')
+        self.math_preview_plot.setLabel('bottom', 's')
+        self.math_preview_plot.showGrid(x=True, y=True, alpha=0.2)
+        self.math_preview_plot.setYRange(-5.5, 5.5)
+        self.math_preview_curve = self.math_preview_plot.plot(
+            pen=pg.mkPen('#c084fc', width=1.5)
+        )
+        l_prev.addWidget(self.math_preview_plot)
+        
+        # Bouton Prévisualiser
+        self.btn_math_preview = QPushButton("🔍 Prévisualiser")
+        self.btn_math_preview.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #9b59b6, stop:1 #7d3c98);
+                color: white;
+                font-weight: bold;
+                font-size: 12px;
+                padding: 8px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #b07cc6, stop:1 #9b59b6);
+            }
+        """)
+        l_prev.addWidget(self.btn_math_preview)
+        
+        group_preview.setLayout(l_prev)
+        layout.addWidget(group_preview)
+        
+        # === BOUTONS D'APPLICATION ===
+        group_apply = QGroupBox("🎛 Appliquer le Signal")
+        group_apply.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 1px solid #f0ad4e;
+                border-radius: 6px;
+                margin-top: 8px;
+                padding-top: 14px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                color: #f0ad4e;
+            }
+        """)
+        l_apply = QVBoxLayout()
+        
+        self.btn_math_apply = QPushButton("⚡ Générer et Appliquer")
+        self.btn_math_apply.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f0ad4e, stop:1 #d4952e);
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 12px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f5bd6e, stop:1 #e0a540);
+            }
+        """)
+        l_apply.addWidget(self.btn_math_apply)
+        
+        # Label statut
+        self.lbl_math_status = QLabel("")
+        self.lbl_math_status.setWordWrap(True)
+        self.lbl_math_status.setStyleSheet("font-size: 11px; padding: 4px;")
+        l_apply.addWidget(self.lbl_math_status)
+        
+        group_apply.setLayout(l_apply)
+        layout.addWidget(group_apply)
+        
+        layout.addStretch(1)
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        content_widget = QWidget()
+        content_widget.setLayout(layout)
+        scroll_area.setWidget(content_widget)
+        
+        main_tab_layout = QVBoxLayout(self.tab_math_gen)
         main_tab_layout.setContentsMargins(0, 0, 0, 0)
         main_tab_layout.addWidget(scroll_area)
 

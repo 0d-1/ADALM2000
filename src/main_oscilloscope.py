@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.1.7"
+    VERSION = "2.2.0"
 
     def __init__(self): 
         super().__init__()
@@ -134,7 +134,7 @@ class OscilloscopeApp(QObject):
         self.app.processEvents()
 
         self.ui = OscilloscopeUI()
-        self.ui.setWindowTitle(f"SCODIN - [v{self.VERSION}]")
+        self.ui.setWindowTitle(f"SCODIN [v{self.VERSION}]")
         self.controller = M2kController()
         self.sample_rate = self.controller.sample_rate
         
@@ -182,6 +182,7 @@ class OscilloscopeApp(QObject):
         self.ai_current_signal = None  # Signal numpy en prévisualisation
         self._ai_signals_history = []  # Historique des signaux générés
         self._load_ai_api_key()  # Charger la clé API depuis config.json
+        self._load_ai_history()  # Charger l'historique des signaux IA
 
         from PyQt6.QtCore import QTimer
         self.timer = QTimer()
@@ -232,6 +233,12 @@ class OscilloscopeApp(QObject):
         self.ui.spin_ai_preview_scale.valueChanged.connect(self.update_ai_preview_scale)
         self.ui.combo_ai_history.currentIndexChanged.connect(self.on_ai_history_selected)
         
+        # Connexions Math Generator
+        self.ui.combo_math_presets.currentIndexChanged.connect(self.on_math_preset_selected)
+        self.ui.btn_math_preview.clicked.connect(self.on_math_preview)
+        self.ui.btn_math_apply.clicked.connect(self.on_math_apply)
+        self.math_current_signal = None
+        
         # Signaux de mouvement des curseurs
         self.ui.v_cursor1.sigPositionChanged.connect(self.update_cursors_measure)
         self.ui.v_cursor2.sigPositionChanged.connect(self.update_cursors_measure)
@@ -271,10 +278,10 @@ class OscilloscopeApp(QObject):
             val = i + 1
             self.splash_progress.setValue(val)
             
-            if val == 10: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nInitialisation du contrôleur USB...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
-            if val == 40: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nTentative de communication matérielle...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
-            if val == 70: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nAnalyseur de Spectre & FFT...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
-            if val == 90: splash.showMessage(f"\n\n\nADALM2000 Laboratory (v{self.VERSION})\nDémarrage de l'interface graphique...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 10: splash.showMessage(f"\n\n\nADALM2000 Lab (v{self.VERSION})\nInitialisation du contrôleur USB...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 40: splash.showMessage(f"\n\n\nADALM2000 Lab (v{self.VERSION})\nTentative de communication matérielle...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 70: splash.showMessage(f"\n\n\nADALM2000 Lab (v{self.VERSION})\nAnalyseur de Spectre & FFT...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
+            if val == 90: splash.showMessage(f"\n\n\nADALM2000 Lab (v{self.VERSION})\nDémarrage de l'interface graphique...", Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop, Qt.GlobalColor.white)
             
             # Au milieu de la barre, on essaie vraiment la connexion
             if val == 50:
@@ -384,15 +391,18 @@ End If
             
             create_it = False
             if exists and is_update:
-                create_it = True # Actualiser silencieusement
+                create_it = True # Actualiser silencieusement le raccourci existant
+            elif exists:
+                pass # Raccourci déjà présent, rien à faire
             else:
+                # Pas de raccourci sur le bureau → proposer d'en créer un
                 msg = QMessageBox(self.ui)
                 msg.setWindowTitle("Raccourci Bureau")
                 msg.setIcon(QMessageBox.Icon.Question)
                 if is_update:
-                    msg.setText("L'application a été mise à jour.\nVoulez-vous ajouter ou actualiser un raccourci sur le bureau ?")
+                    msg.setText("L'application a été mise à jour.\nVoulez-vous ajouter un raccourci sur le bureau ?")
                 else:
-                    msg.setText("Installation terminée.\nVoulez-vous ajouter un raccourci sur le bureau ?")
+                    msg.setText("Bienvenue !\nVoulez-vous ajouter un raccourci sur le bureau ?")
                 msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
                 msg.setStyleSheet("QMessageBox { background-color: #121212; color: white; } QLabel { color: #e0e0e0; } QPushButton { background-color: #333; color: white; padding: 6px 15px; border-radius: 4px; } QPushButton:hover { background-color: #444; }")
                 
@@ -1752,6 +1762,7 @@ oLink.Save
             if len(self._ai_signals_history) > 10:
                 self._ai_signals_history.pop()
             self._update_ai_history_combo()
+            self._save_ai_history()
             
         else:
             # Afficher l'erreur
@@ -1916,46 +1927,169 @@ oLink.Save
         scrollbar = self.ui.txt_ai_chat.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
+    # =============================================
+    # ========= MATH FUNCTION GENERATOR ===========
+    # =============================================
+
+    # Whitelist of safe numpy functions exposed to math expressions
+    _MATH_SAFE_DICT = {
+        'sin': np.sin, 'cos': np.cos, 'tan': np.tan,
+        'arcsin': np.arcsin, 'arccos': np.arccos, 'arctan': np.arctan,
+        'exp': np.exp, 'log': np.log, 'log10': np.log10, 'log2': np.log2,
+        'abs': np.abs, 'sqrt': np.sqrt, 'sign': np.sign,
+        'floor': np.floor, 'ceil': np.ceil,
+        'pi': np.pi, 'e': np.e,
+        'sinh': np.sinh, 'cosh': np.cosh, 'tanh': np.tanh,
+        'sinc': np.sinc,
+        'clip': np.clip,
+        'mod': np.mod,
+        'maximum': np.maximum, 'minimum': np.minimum,
+    }
+
+    def _evaluate_math_expression(self, expr_str, t_array, freq, amp, offset):
+        """Évalue une expression mathématique de façon sécurisée avec numpy."""
+        namespace = dict(self._MATH_SAFE_DICT)
+        namespace['t'] = t_array
+        namespace['f'] = freq
+        namespace['A'] = amp
+
+        expr_str = expr_str.replace('random(t)', '_rand_t')
+        namespace['_rand_t'] = np.random.uniform(-1.0, 1.0, size=len(t_array))
+
+        namespace['__builtins__'] = {}
+
+        try:
+            result = eval(expr_str, namespace)
+        except Exception as e:
+            raise ValueError(f"Erreur d'évaluation : {e}")
+
+        result = np.asarray(result, dtype=np.float64)
+        if result.shape != t_array.shape:
+            result = np.full_like(t_array, float(result.flat[0]))
+
+        result = result + offset
+        np.clip(result, -5.0, 5.0, out=result)
+        return result
+
+    def on_math_preset_selected(self, index):
+        """Remplit le champ d'expression avec le modèle choisi."""
+        if index <= 0:
+            return
+        text = self.ui.combo_math_presets.currentText()
+        if ':' in text:
+            expr = text.split(':', 1)[1].strip()
+            self.ui.txt_math_expr.setText(expr)
+        self.ui.combo_math_presets.blockSignals(True)
+        self.ui.combo_math_presets.setCurrentIndex(0)
+        self.ui.combo_math_presets.blockSignals(False)
+
+    def _build_math_signal(self):
+        """Construit le signal numpy à partir de l'expression et des paramètres UI."""
+        expr = self.ui.txt_math_expr.text().strip()
+        if not expr:
+            raise ValueError("L'expression est vide.")
+
+        freq = self.ui.spin_math_freq.value()
+        amp = self.ui.spin_math_amp.value()
+        offset = self.ui.spin_math_offset.value()
+        duration = self.ui.spin_math_duration.value()
+        sr = self.controller.sample_rate
+
+        total_samples = int(sr * duration)
+        total_samples = min(total_samples, 2000000)
+        if total_samples < 2:
+            raise ValueError("La durée du buffer est trop courte.")
+
+        t = np.linspace(0, duration, total_samples, endpoint=False)
+        wave = self._evaluate_math_expression(expr, t, freq, amp, offset)
+        return wave, t, duration
+
+    def on_math_preview(self):
+        """Prévisualise le signal mathématique dans le mini-graphe."""
+        try:
+            wave, t, duration = self._build_math_signal()
+            self.math_current_signal = wave
+
+            max_display = 4000
+            if len(wave) > max_display:
+                step = max(1, len(wave) // max_display)
+                wave_d = wave[::step]
+                t_d = t[::step]
+            else:
+                wave_d = wave
+                t_d = t
+
+            self.ui.math_preview_curve.setData(t_d, wave_d)
+            self.ui.math_preview_plot.setXRange(0, duration, padding=0)
+            y_max = max(abs(np.nanmin(wave_d)), abs(np.nanmax(wave_d)), 0.1)
+            self.ui.math_preview_plot.setYRange(-y_max * 1.2, y_max * 1.2)
+
+            self.ui.lbl_math_status.setText(f"✅ Aperçu : {len(wave)} éch. | Vpp={np.ptp(wave):.3f}V | DC={np.mean(wave):.3f}V")
+            self.ui.lbl_math_status.setStyleSheet("color: #5cb85c; font-weight: bold; font-size: 11px; padding: 4px;")
+        except Exception as e:
+            self.ui.lbl_math_status.setText(f"❌ {e}")
+            self.ui.lbl_math_status.setStyleSheet("color: #d9534f; font-size: 11px; padding: 4px;")
+            self.math_current_signal = None
+
+    def on_math_apply(self):
+        """Génère le signal mathématique et l'envoie sur la sortie sélectionnée."""
+        try:
+            wave, t, duration = self._build_math_signal()
+            self.math_current_signal = wave
+
+            channel = self.ui.combo_math_output.currentIndex()
+            ch_name = "W1" if channel == 0 else "W2"
+
+            self.controller.push_raw_waveform(channel, wave)
+
+            max_display = 4000
+            if len(wave) > max_display:
+                step = max(1, len(wave) // max_display)
+                wave_d = wave[::step]
+                t_d = t[::step]
+            else:
+                wave_d = wave
+                t_d = t
+            self.ui.math_preview_curve.setData(t_d, wave_d)
+            self.ui.math_preview_plot.setXRange(0, duration, padding=0)
+
+            self.ui.lbl_math_status.setText(
+                f"✅ Signal envoyé sur {ch_name} ! ({len(wave)} éch., {duration*1000:.1f}ms, cyclique)"
+            )
+            self.ui.lbl_math_status.setStyleSheet("color: #5cb85c; font-weight: bold; font-size: 11px; padding: 4px;")
+        except Exception as e:
+            self.ui.lbl_math_status.setText(f"❌ {e}")
+            self.ui.lbl_math_status.setStyleSheet("color: #d9534f; font-size: 11px; padding: 4px;")
+
 def _check_and_install_libm2k():
     """Vérifie si libm2k est installé, propose l'installation automatique sinon."""
     if LIBM2K_AVAILABLE:
         return True
     
-    # Trouver l'installateur embarqué
-    installer_name = "libm2k-0.9.0-setup.exe"
-    search_paths = [
-        os.path.join(_BASE_DIR, installer_name),
-        os.path.join(_BASE_DIR, '..', installer_name),
-        os.path.join(os.path.dirname(_BASE_DIR), installer_name),
-    ]
     installer_path = None
-    for p in search_paths:
-        if os.path.exists(p):
-            installer_path = os.path.abspath(p)
+    search_dirs = [_BASE_DIR, os.path.dirname(_BASE_DIR)]
+    for d in search_dirs:
+        candidate = os.path.join(d, 'libm2k-0.9.0-setup.exe')
+        if os.path.exists(candidate):
+            installer_path = candidate
             break
     
-    # Créer une mini-app Qt juste pour le dialogue
-    temp_app = QApplication.instance() or QApplication(sys.argv)
-    
-    if installer_path:
+    if installer_path and sys.platform == 'win32':
+        app = QApplication.instance() or QApplication(sys.argv)
         reply = QMessageBox.question(
             None,
             "Driver ADALM2000 manquant",
-            "Le driver ADALM2000 (libm2k) n'est pas encore installé.\n\n"
-            "Voulez-vous lancer l'installation maintenant ?\n"
-            "(Cela ne prend qu'une minute)\n\n"
-            "L'oscilloscope se lancera ensuite normalement.",
+            "Le driver ADALM2000 (libm2k) n'est pas installé.\n\n"
+            f"Un installateur a été trouvé :\n{installer_path}\n\n"
+            "Voulez-vous l'installer maintenant ?\n"
+            "(L'application redémarrera après l'installation)",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                subprocess.Popen([installer_path], shell=True)
-                QMessageBox.information(
-                    None,
-                    "Installation en cours",
-                    "L'installateur du driver a été lancé.\n\n"
-                    "Suivez les étapes de l'installateur, puis\n"
-                    "relancez l'oscilloscope une fois terminé."
+                subprocess.Popen(
+                    [installer_path],
+                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP
                 )
                 sys.exit(0)
             except Exception as e:
