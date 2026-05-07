@@ -15,7 +15,7 @@ Contrairement aux outils traditionnels, **ADALM2000 Laboratory** intègre un ass
 *   **Pilotage en Langage Naturel** : Plus besoin de formules complexes ou de scripts manuels. "Génère une sinusoïde de 1kHz avec une amplitude de 2V" suffit pour configurer votre matériel.
 *   **Prototypage de Signaux Complexes** : Demandez des signaux sophistiqués (Chirps, modulations, bruit rose, impulsions physiologiques) et l'IA écrit le code NumPy optimal en temps réel.
 *   **Prévisualisation IA** : Visualisez instantanément la réponse théorique générée par l'IA avant de l'envoyer physiquement sur les sorties W1/W2.
-*   **Correction Itérative** : Discutez avec l'IA pour affiner votre signal ("Ajoute un peu de bruit", "Augmente la fréquence de 20%").
+*   **Correction Itérative & Historique** : Discutez avec l'IA pour affiner votre signal ("Ajoute un peu de bruit", "Augmente la fréquence de 20%"). L'historique de vos requêtes est sauvegardé d'une session à l'autre !
 
 ---
 
@@ -28,7 +28,8 @@ Contrairement aux outils traditionnels, **ADALM2000 Laboratory** intègre un ass
 *   **Analyse de Lissajous (XY)** : Mode XY pour l'étude des déphasages et des composants.
 
 ### ⚙️ Contrôle Avancé
-*   **Générateur de Signaux (AWG)** : Deux sorties indépendantes (W1, W2) avec pré-réglages pro et mode personnalisé.
+*   **Générateur de Signaux (AWG)** : Deux sorties indépendantes (W1, W2) avec pré-réglages pro et mode personnalisé (Duty Cycle, Phase, DC Offset).
+*   **Générateur Mathématique f(x)** : Écrivez vos propres expressions mathématiques (ex: `A * sin(2*pi*f*t) + random(t)`) pour créer des signaux complexes sur mesure. Inclut une bibliothèque de modèles et une prévisualisation instantanée.
 *   **Trigger Logiciel Expert** : Stabilisation parfaite des signaux grâce au trigger avec hystérésis paramétrable.
 *   **Outils de Mesure** : Curseurs verticaux (Temps/Freq) et horizontaux (Tension) pour une précision chirurgicale.
 
