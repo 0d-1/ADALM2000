@@ -833,14 +833,7 @@ class OscilloscopeUI(QWidget):
         h_dur.addWidget(self.spin_math_duration)
         l_params.addLayout(h_dur)
         
-        # Sortie
-        h_out = QHBoxLayout()
-        h_out.addWidget(QLabel("Sortie :"))
-        self.combo_math_output = QComboBox()
-        self.combo_math_output.addItems(["W1", "W2"])
-        h_out.addWidget(self.combo_math_output)
-        l_params.addLayout(h_out)
-        
+
         group_params.setLayout(l_params)
         layout.addWidget(group_params)
         
@@ -915,8 +908,10 @@ class OscilloscopeUI(QWidget):
         """)
         l_apply = QVBoxLayout()
         
-        self.btn_math_apply = QPushButton("⚡ Générer et Appliquer")
-        self.btn_math_apply.setStyleSheet("""
+        h_apply_btns = QHBoxLayout()
+        
+        self.btn_math_apply_w1 = QPushButton("⚡ Appliquer sur W1")
+        self.btn_math_apply_w1.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                     stop:0 #f0ad4e, stop:1 #d4952e);
@@ -932,8 +927,28 @@ class OscilloscopeUI(QWidget):
                     stop:0 #f5bd6e, stop:1 #e0a540);
             }
         """)
-        l_apply.addWidget(self.btn_math_apply)
+        h_apply_btns.addWidget(self.btn_math_apply_w1)
+
+        self.btn_math_apply_w2 = QPushButton("⚡ Appliquer sur W2")
+        self.btn_math_apply_w2.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f0ad4e, stop:1 #d4952e);
+                color: white;
+                font-weight: bold;
+                font-size: 13px;
+                padding: 12px;
+                border: none;
+                border-radius: 6px;
+            }
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #f5bd6e, stop:1 #e0a540);
+            }
+        """)
+        h_apply_btns.addWidget(self.btn_math_apply_w2)
         
+        l_apply.addLayout(h_apply_btns)        
         # Label statut
         self.lbl_math_status = QLabel("")
         self.lbl_math_status.setWordWrap(True)

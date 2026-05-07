@@ -236,7 +236,8 @@ class OscilloscopeApp(QObject):
         # Connexions Math Generator
         self.ui.combo_math_presets.currentIndexChanged.connect(self.on_math_preset_selected)
         self.ui.btn_math_preview.clicked.connect(self.on_math_preview)
-        self.ui.btn_math_apply.clicked.connect(self.on_math_apply)
+        self.ui.btn_math_apply_w1.clicked.connect(lambda: self.on_math_apply(0))
+        self.ui.btn_math_apply_w2.clicked.connect(lambda: self.on_math_apply(1))
         self.math_current_signal = None
         
         # Signaux de mouvement des curseurs
@@ -562,23 +563,17 @@ oLink.Save
             self.ui.lbl_status.setStyleSheet("color: #d9534f; font-weight: bold; font-size: 14px;")
             
     def load_icon_path(self):
-        """Charge le chemin de l'icône depuis le config.json LOCAL (pas APPDATA, car l'icône est embarquée)."""
+        """Charge le chemin de l'icône de l'application."""
         try:
-            # L'icône est toujours relative au dossier d'installation
-            local_config = os.path.join(self._script_dir, "config.json")
-            if os.path.exists(local_config):
-                with open(local_config, "r") as f:
-                    config = json.load(f)
-                    raw_path = config.get("icon_path", "")
-                    if raw_path:
-                        return os.path.normpath(os.path.join(self._script_dir, raw_path))
-            # Fallback : chercher dans le config APPDATA (migration)
-            if os.path.exists(self.config_file):
-                with open(self.config_file, "r") as f:
-                    config = json.load(f)
-                    raw_path = config.get("icon_path", "")
-                    if raw_path:
-                        return os.path.normpath(os.path.join(self._script_dir, raw_path))
+            # L'icône est embarquée dans le dossier icon/viking_logo.png par PyInstaller ou en local
+            icon_candidate = os.path.join(self._script_dir, 'icon', 'viking_logo.png')
+            if os.path.exists(icon_candidate):
+                return os.path.normpath(icon_candidate)
+            
+            # Autre candidat s'il est à la racine de _BASE_DIR
+            icon_candidate2 = os.path.join(self._script_dir, 'viking_logo.png')
+            if os.path.exists(icon_candidate2):
+                return os.path.normpath(icon_candidate2)
         except:
             pass
         return ""
@@ -2031,13 +2026,12 @@ oLink.Save
             self.ui.lbl_math_status.setStyleSheet("color: #d9534f; font-size: 11px; padding: 4px;")
             self.math_current_signal = None
 
-    def on_math_apply(self):
-        """Génère le signal mathématique et l'envoie sur la sortie sélectionnée."""
+    def on_math_apply(self, channel):
+        """Génère le signal mathématique et l'envoie sur la sortie spécifiée."""
         try:
             wave, t, duration = self._build_math_signal()
             self.math_current_signal = wave
 
-            channel = self.ui.combo_math_output.currentIndex()
             ch_name = "W1" if channel == 0 else "W2"
 
             self.controller.push_raw_waveform(channel, wave)
