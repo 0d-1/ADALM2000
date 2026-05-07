@@ -105,13 +105,13 @@ class M2kController(QObject):
         self.ain = self.ctx.getAnalogIn()
         print("M2kController: Appareil connecté et calibré.")
 
-    def generate_base_signal(self, bpm=60.0):
+    def generate_base_signal(self, channel=0, bpm=60.0):
         if not self.ctx:
             return
             
         period_s = 60.0 / bpm
-        print(f"M2kController: Génération du signal 40kHz à {bpm} BPM (T={period_s:.3f}s)...")
-        self.aout.setSampleRate(0, self.sample_rate)
+        print(f"M2kController: Génération du signal 40kHz à {bpm} BPM sur W{channel+1} (T={period_s:.3f}s)...")
+        self.aout.setSampleRate(channel, self.sample_rate)
         
         samples_period = int(self.sample_rate * period_s)
         t = np.linspace(0, period_s, samples_period, endpoint=False)
@@ -121,10 +121,10 @@ class M2kController(QObject):
         wave[:idx_on] = 0.03 * np.sin(2 * np.pi * 40000 * t[:idx_on])
         
         self.aout.setCyclic(True)
-        self.aout.enableChannel(0, True)
-        self.aout.push(0, wave)
+        self.aout.enableChannel(channel, True)
+        self.aout.push(channel, wave)
 
-    def generate_custom_waveform(self, channel, wave_type_idx, frequency, amplitude, offset, duty_cycle=50.0):
+    def generate_custom_waveform(self, channel, wave_type_idx, frequency, amplitude, offset, duty_cycle=50.0, phase_deg=0.0):
         if not self.ctx:
             return
             
@@ -149,16 +149,18 @@ class M2kController(QObject):
         wave = np.zeros(total_samples)
         
         amp_half = amplitude / 2.0
+        phase_rad = np.deg2rad(phase_deg)
+        shift = phase_deg / 360.0
         
         if wave_type_idx == 0: # Sinusoïdale
-            wave = amp_half * np.sin(2 * np.pi * frequency * t) + offset
+            wave = amp_half * np.sin(2 * np.pi * frequency * t + phase_rad) + offset
         elif wave_type_idx == 1: # Carrée
             # Utilisation du rapport cyclique (duty cycle)
-            wave = np.where((t * frequency) % 1.0 < (duty_cycle / 100.0), amp_half, -amp_half) + offset
+            wave = np.where(((t * frequency + shift) % 1.0) < (duty_cycle / 100.0), amp_half, -amp_half) + offset
         elif wave_type_idx == 2: # Triangulaire
-            wave = amp_half * (2 * np.abs(2 * (t * frequency - np.floor(t * frequency + 0.5))) - 1) + offset
+            wave = amp_half * (2 * np.abs(2 * ((t * frequency + shift) - np.floor((t * frequency + shift) + 0.5))) - 1) + offset
         elif wave_type_idx == 3: # Dents de scie
-            wave = amp_half * (2 * (t * frequency - np.floor(t * frequency))) - amp_half + offset
+            wave = amp_half * (2 * ((t * frequency + shift) - np.floor(t * frequency + shift))) - amp_half + offset
             
         self.aout.setCyclic(True)
         self.aout.enableChannel(channel, True)

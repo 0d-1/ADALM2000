@@ -199,9 +199,9 @@ class OscilloscopeUI(QWidget):
         # --- Catégorie 2 : Générateurs (3 sous-onglets) ---
         self.sub_tabs_gen = QTabWidget()
         self.sub_tabs_gen.setStyleSheet(_sub_tab_style)
-        self.sub_tabs_gen.addTab(self.tab_gen, "Réf W1")
         self.sub_tabs_gen.addTab(self.tab_custom_gen, "W1 / W2")
         self.sub_tabs_gen.addTab(self.tab_ai, "🤖 IA")
+        self.sub_tabs_gen.addTab(self.tab_gen, "Réf")
         self.tabs.addTab(self.sub_tabs_gen, "⚡ Générateurs")
         
         # --- Catégorie 3 : Analyse (3 sous-onglets) ---
@@ -523,11 +523,18 @@ class OscilloscopeUI(QWidget):
     def setup_generator_tab(self):
         layout = QVBoxLayout()
         
-        group_gen = QGroupBox("Signal de Référence (Pin: W1)")
+        group_gen = QGroupBox("Signal de Référence")
         l_gen = QVBoxLayout()
         
         lbl_desc = QLabel("L'ADALM2000 génère continuellement<br>des bursts de 40kHz (65% du temps ON).<br>Vous pouvez ajuster le rythme (BPM)<br>et superposer l'allure théorique à l'écran.")
         l_gen.addWidget(lbl_desc)
+        
+        layout_out = QHBoxLayout()
+        layout_out.addWidget(QLabel("Sortie (Broche) :"))
+        self.combo_ref_out = QComboBox()
+        self.combo_ref_out.addItems(["W1", "W2"])
+        layout_out.addWidget(self.combo_ref_out)
+        l_gen.addLayout(layout_out)
         
         layout_bpm = QHBoxLayout()
         layout_bpm.addWidget(QLabel("Rythme (BPM) :"))
@@ -546,6 +553,11 @@ class OscilloscopeUI(QWidget):
             lambda state: self.curve_ideal.setVisible(bool(state))
         )
         l_gen.addWidget(self.chk_show_ideal)
+        
+        self.chk_enable_ref = QCheckBox("Activer le générateur de référence")
+        self.chk_enable_ref.setChecked(False)
+        self.chk_enable_ref.setStyleSheet("color: #5bc0de; font-weight: bold; margin-top: 5px;")
+        l_gen.addWidget(self.chk_enable_ref)
         
         group_gen.setLayout(l_gen)
         layout.addWidget(group_gen)
@@ -578,6 +590,27 @@ class OscilloscopeUI(QWidget):
         self.spin_w1_amp.setValue(2.0)
         l_w1.addWidget(self.spin_w1_amp)
         
+        l_w1.addWidget(QLabel("Offset W1 (V) :"))
+        self.spin_w1_offset = QDoubleSpinBox()
+        self.spin_w1_offset.setRange(-5.0, 5.0)
+        self.spin_w1_offset.setValue(0.0)
+        self.spin_w1_offset.setSingleStep(0.1)
+        l_w1.addWidget(self.spin_w1_offset)
+        
+        l_w1.addWidget(QLabel("Rapport Cyclique W1 (%) :"))
+        self.spin_w1_duty = QDoubleSpinBox()
+        self.spin_w1_duty.setRange(1.0, 99.0)
+        self.spin_w1_duty.setValue(50.0)
+        self.spin_w1_duty.setSingleStep(1.0)
+        l_w1.addWidget(self.spin_w1_duty)
+        
+        l_w1.addWidget(QLabel("Phase W1 (°) :"))
+        self.spin_w1_phase = QDoubleSpinBox()
+        self.spin_w1_phase.setRange(0.0, 360.0)
+        self.spin_w1_phase.setValue(0.0)
+        self.spin_w1_phase.setSingleStep(15.0)
+        l_w1.addWidget(self.spin_w1_phase)
+        
         self.btn_apply_w1 = QPushButton("Appliquer W1")
         self.btn_apply_w1.setStyleSheet("background-color: #5bc0de; color: white; font-weight: bold;")
         l_w1.addWidget(self.btn_apply_w1)
@@ -606,6 +639,27 @@ class OscilloscopeUI(QWidget):
         self.spin_w2_amp.setRange(0.01, 10.0)
         self.spin_w2_amp.setValue(2.0)
         l_w2.addWidget(self.spin_w2_amp)
+        
+        l_w2.addWidget(QLabel("Offset W2 (V) :"))
+        self.spin_w2_offset = QDoubleSpinBox()
+        self.spin_w2_offset.setRange(-5.0, 5.0)
+        self.spin_w2_offset.setValue(0.0)
+        self.spin_w2_offset.setSingleStep(0.1)
+        l_w2.addWidget(self.spin_w2_offset)
+        
+        l_w2.addWidget(QLabel("Rapport Cyclique W2 (%) :"))
+        self.spin_w2_duty = QDoubleSpinBox()
+        self.spin_w2_duty.setRange(1.0, 99.0)
+        self.spin_w2_duty.setValue(50.0)
+        self.spin_w2_duty.setSingleStep(1.0)
+        l_w2.addWidget(self.spin_w2_duty)
+        
+        l_w2.addWidget(QLabel("Phase W2 (°) :"))
+        self.spin_w2_phase = QDoubleSpinBox()
+        self.spin_w2_phase.setRange(0.0, 360.0)
+        self.spin_w2_phase.setValue(0.0)
+        self.spin_w2_phase.setSingleStep(15.0)
+        l_w2.addWidget(self.spin_w2_phase)
         
         self.btn_apply_w2 = QPushButton("Appliquer W2")
         self.btn_apply_w2.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold;")

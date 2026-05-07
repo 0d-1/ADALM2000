@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.1.4"
+    VERSION = "2.1.6"
 
     def __init__(self): 
         super().__init__()
@@ -195,6 +195,8 @@ class OscilloscopeApp(QObject):
         self.ui.btn_run_stop.clicked.connect(self.toggle_run)
         self.ui.chk_auto_y.stateChanged.connect(self.update_y_range)
         self.ui.spin_bpm.valueChanged.connect(self.change_bpm)
+        self.ui.chk_enable_ref.stateChanged.connect(self.toggle_ref_generator)
+        self.ui.combo_ref_out.currentIndexChanged.connect(self.toggle_ref_generator)
         self.ui.btn_auto_zero.clicked.connect(self.run_auto_zero)
         self.ui.btn_auto_zero_osc.clicked.connect(self.run_auto_zero)
         
@@ -430,14 +432,18 @@ oLink.Save
             wave_idx = self.ui.combo_w1_type.currentIndex()
             freq = self.ui.spin_w1_freq.value()
             amp = self.ui.spin_w1_amp.value()
+            offs = self.ui.spin_w1_offset.value()
+            duty = self.ui.spin_w1_duty.value()
+            phase = self.ui.spin_w1_phase.value()
         else:
             wave_idx = self.ui.combo_w2_type.currentIndex()
             freq = self.ui.spin_w2_freq.value()
             amp = self.ui.spin_w2_amp.value()
+            offs = self.ui.spin_w2_offset.value()
+            duty = self.ui.spin_w2_duty.value()
+            phase = self.ui.spin_w2_phase.value()
             
-        offs = 0.0
-        duty = 50.0
-        self.controller.generate_custom_waveform(channel, wave_idx, freq, amp, offs, duty)
+        self.controller.generate_custom_waveform(channel, wave_idx, freq, amp, offs, duty, phase)
 
     def toggle_v_cursors(self, state):
         if state:
@@ -509,7 +515,7 @@ oLink.Save
         try:
             self.controller.disconnect_device() # Cleanup au cas où on reconnecte à chaud
             self.controller.connect_device()
-            self.controller.generate_base_signal(self.ui.spin_bpm.value())
+            self.toggle_ref_generator()
             self.controller.start_acquisition(self.on_new_data)
             
             # Synchroniser le sample_rate avec le taux réel du matériel
@@ -561,7 +567,20 @@ oLink.Save
             
     def change_bpm(self, bpm):
         self.update_ideal_signal(bpm)
-        self.controller.generate_base_signal(bpm)
+        if self.ui.chk_enable_ref.isChecked():
+            ch = self.ui.combo_ref_out.currentIndex()
+            self.controller.generate_base_signal(channel=ch, bpm=bpm)
+
+    def toggle_ref_generator(self):
+        if not self.controller.ctx:
+            return
+            
+        if self.ui.chk_enable_ref.isChecked():
+            ch = self.ui.combo_ref_out.currentIndex()
+            self.controller.generate_base_signal(channel=ch, bpm=self.ui.spin_bpm.value())
+        else:
+            self.apply_custom_signal(0)
+            self.apply_custom_signal(1)
         
     def update_ideal_signal(self, bpm):
         self.y_ideal_master.fill(0)
@@ -1118,7 +1137,7 @@ oLink.Save
             self.ui.btn_run_ohm.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")
         else:
             # Désactiver W1 (ou remettre signal de base)
-            self.controller.generate_base_signal(self.ui.spin_bpm.value())
+            self.toggle_ref_generator()
             self.ui.btn_run_ohm.setText("Démarrer l'Ohmmètre")
             self.ui.btn_run_ohm.setStyleSheet("background-color: #333; color: #5bc0de; font-weight: bold; padding: 10px; border: 1px solid #5bc0de;")
             self.ui.lbl_ohm_val.setText("--- Ω")
