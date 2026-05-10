@@ -105,20 +105,20 @@ class M2kController(QObject):
         self.ain = self.ctx.getAnalogIn()
         print("M2kController: Appareil connecté et calibré.")
 
-    def generate_base_signal(self, channel=0, bpm=60.0):
+    def generate_base_signal(self, channel=0, bpm=60.0, freq=40000.0, duty_cycle=65.0, amplitude=0.05):
         if not self.ctx:
             return
             
         period_s = 60.0 / bpm
-        print(f"M2kController: Génération du signal 40kHz à {bpm} BPM sur W{channel+1} (T={period_s:.3f}s)...")
+        print(f"M2kController: Génération du signal {freq}Hz à {bpm} BPM ({duty_cycle}% ON) sur W{channel+1} (T={period_s:.3f}s, Amp={amplitude}V)...")
         self.aout.setSampleRate(channel, self.sample_rate)
         
         samples_period = int(self.sample_rate * period_s)
         t = np.linspace(0, period_s, samples_period, endpoint=False)
         wave = np.zeros(samples_period)
         
-        idx_on = int(samples_period * 0.65)
-        wave[:idx_on] = 0.03 * np.sin(2 * np.pi * 40000 * t[:idx_on])
+        idx_on = int(samples_period * (duty_cycle / 100.0))
+        wave[:idx_on] = amplitude * np.sin(2 * np.pi * freq * t[:idx_on])
         
         self.aout.setCyclic(True)
         self.aout.enableChannel(channel, True)

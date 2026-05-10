@@ -71,7 +71,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.2.1"
+    VERSION = "2.2.2"
 
     def __init__(self): 
         super().__init__()
@@ -196,6 +196,9 @@ class OscilloscopeApp(QObject):
         self.ui.btn_run_stop.clicked.connect(self.toggle_run)
         self.ui.chk_auto_y.stateChanged.connect(self.update_y_range)
         self.ui.spin_bpm.valueChanged.connect(self.change_bpm)
+        self.ui.spin_ref_freq.valueChanged.connect(lambda: self.change_bpm(self.ui.spin_bpm.value()))
+        self.ui.spin_ref_duty.valueChanged.connect(lambda: self.change_bpm(self.ui.spin_bpm.value()))
+        self.ui.spin_ref_amp.valueChanged.connect(lambda: self.change_bpm(self.ui.spin_bpm.value()))
         self.ui.chk_enable_ref.stateChanged.connect(self.toggle_ref_generator)
         self.ui.combo_ref_out.currentIndexChanged.connect(self.toggle_ref_generator)
         self.ui.btn_auto_zero.clicked.connect(self.run_auto_zero)
@@ -583,7 +586,10 @@ oLink.Save
         self.update_ideal_signal(bpm)
         if self.ui.chk_enable_ref.isChecked():
             ch = self.ui.combo_ref_out.currentIndex()
-            self.controller.generate_base_signal(channel=ch, bpm=bpm)
+            freq = self.ui.spin_ref_freq.value()
+            duty = self.ui.spin_ref_duty.value()
+            amp = self.ui.spin_ref_amp.value() / 1000.0 # Convert mV to V
+            self.controller.generate_base_signal(channel=ch, bpm=bpm, freq=freq, duty_cycle=duty, amplitude=amp)
 
     def toggle_ref_generator(self):
         if not self.controller.ctx:
@@ -591,7 +597,11 @@ oLink.Save
             
         if self.ui.chk_enable_ref.isChecked():
             ch = self.ui.combo_ref_out.currentIndex()
-            self.controller.generate_base_signal(channel=ch, bpm=self.ui.spin_bpm.value())
+            bpm = self.ui.spin_bpm.value()
+            freq = self.ui.spin_ref_freq.value()
+            duty = self.ui.spin_ref_duty.value()
+            amp = self.ui.spin_ref_amp.value() / 1000.0
+            self.controller.generate_base_signal(channel=ch, bpm=bpm, freq=freq, duty_cycle=duty, amplitude=amp)
         else:
             self.apply_custom_signal(0)
             self.apply_custom_signal(1)
@@ -600,12 +610,17 @@ oLink.Save
         self.y_ideal_master.fill(0)
         period_s = 60.0 / bpm
         samples_period = int(self.sample_rate * period_s)
-        idx_on = int(samples_period * 0.65)
+        
+        freq = self.ui.spin_ref_freq.value()
+        duty = self.ui.spin_ref_duty.value()
+        amp = self.ui.spin_ref_amp.value() / 1000.0
+        
+        idx_on = int(samples_period * (duty / 100.0))
         
         # Construction d'un motif complet
         t_pattern = np.linspace(0, period_s, samples_period, endpoint=False)
         pattern = np.zeros(samples_period, dtype=np.float32)
-        pattern[:idx_on] = 0.03 * np.sin(2 * np.pi * 40000 * t_pattern[:idx_on])
+        pattern[:idx_on] = amp * np.sin(2 * np.pi * freq * t_pattern[:idx_on])
         
         # Remplissage de l'historique complet pour affichage de la courbe idéale
         num_periods = int(np.ceil(self.buffer_size / samples_period))
