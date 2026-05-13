@@ -21,7 +21,7 @@ import numpy as np
 from PyQt6.QtWidgets import (QApplication, QColorDialog, QFileDialog, QSplashScreen, QProgressBar, 
                              QDialog, QVBoxLayout, QHBoxLayout, QFormLayout, QLineEdit, QDialogButtonBox, QMessageBox, QMainWindow, QLabel)
 from PyQt6.QtGui import QIcon, QPixmap, QFont
-from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, QObject, pyqtSignal, pyqtSlot
+from PyQt6.QtCore import Qt, QTimer, QMetaObject, Q_ARG, QObject, pyqtSignal, pyqtSlot, QThread
 import pyqtgraph as pg
 import pyqtgraph.exporters
 from oscilloscope_ui import OscilloscopeUI
@@ -37,6 +37,89 @@ else:
     if os.path.exists(libs_path):
         sys.path.insert(0, libs_path)
 # -------------------------------------------------
+
+class BodeSweepThread(QThread):
+    point_finished = pyqtSignal(float, float, float) # freq, mag, phase
+    finished = pyqtSignal()
+    progress = pyqtSignal(int)
+
+    def __init__(self, controller, start_freq, stop_freq, points_per_decade, amplitude):
+        super().__init__()
+        self.controller = controller
+        self.start_freq = start_freq
+        self.stop_freq = stop_freq
+        self.points_per_decade = points_per_decade
+        self.amplitude = amplitude
+        self.is_running = True
+
+    def run(self):
+        try:
+            # Calcul des fréquences sur une échelle logarithmique
+            decades = np.log10(self.stop_freq) - np.log10(self.start_freq)
+            num_points = int(decades * self.points_per_decade) + 1
+            if num_points < 2: num_points = 2
+            freqs = np.logspace(np.log10(self.start_freq), np.log10(self.stop_freq), num_points)
+            
+            # Désactiver temporairement le mode cyclique s'il y a des conflits
+            for i, f in enumerate(freqs):
+                if not self.is_running:
+                    break
+                
+                # 1. Configurer W1
+                self.controller.aout.setSampleRate(0, self.controller.sample_rate)
+                # On génère assez de cycles pour la mesure
+                num_cycles_gen = 20
+                samples_per_cycle = self.controller.sample_rate / f
+                gen_samples = int(max(samples_per_cycle * num_cycles_gen, 1024))
+                gen_samples = min(gen_samples, 200000)
+                
+                t_gen = np.linspace(0, gen_samples / self.controller.sample_rate, gen_samples, endpoint=False)
+                wave = (self.amplitude / 2.0) * np.sin(2 * np.pi * f * t_gen)
+                
+                self.controller.aout.setCyclic(True)
+                self.controller.aout.enableChannel(0, True)
+                self.controller.aout.push(0, wave)
+                
+                # 2. Attendre stabilisation (plus long pour les basses fréquences)
+                wait_time = max(0.05, 2.0 / f)
+                time.sleep(min(0.2, wait_time))
+                
+                # 3. Acquérir données
+                samples_to_read = int(max(samples_per_cycle * 10, 1024))
+                samples_to_read = min(samples_to_read, 100000)
+                
+                data = self.controller.ain.getSamples(samples_to_read)
+                if len(data) >= 2:
+                    ch1 = np.asarray(data[0])
+                    ch2 = np.asarray(data[1])
+                    
+                    # 4. Calcul Magnitude et Phase par corrélation
+                    t_acq = np.linspace(0, len(ch1) / self.controller.sample_rate, len(ch1), endpoint=False)
+                    ref_sin = np.sin(2 * np.pi * f * t_acq)
+                    ref_cos = np.cos(2 * np.pi * f * t_acq)
+                    
+                    def get_complex(signal):
+                        real = np.mean(signal * ref_sin)
+                        imag = np.mean(signal * ref_cos)
+                        return real + 1j * imag
+                    
+                    c1 = get_complex(ch1)
+                    c2 = get_complex(ch2)
+                    
+                    if np.abs(c1) > 0.001: # Seuil minimum de signal
+                        transfer = c2 / c1
+                        mag_db = 20 * np.log10(np.abs(transfer))
+                        phase_deg = np.rad2deg(np.angle(transfer))
+                        self.point_finished.emit(f, mag_db, phase_deg)
+                
+                self.progress.emit(int((i + 1) / len(freqs) * 100))
+        except Exception as e:
+            print(f"BodeSweepThread Error: {e}")
+            
+        self.finished.emit()
+
+    def stop(self):
+        self.is_running = False
 
 class ExportSettingsDialog(QDialog):
     def __init__(self, parent=None, current_title="", current_x="", current_y=""):
@@ -71,7 +154,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.2.2"
+    VERSION = "2.3.0"
 
     def __init__(self): 
         super().__init__()
@@ -184,6 +267,10 @@ class OscilloscopeApp(QObject):
         self._load_ai_api_key()  # Charger la clé API depuis config.json
         self._load_ai_history()  # Charger l'historique des signaux IA
 
+        # --- Bode Sweep State ---
+        self.bode_thread = None
+        self.bode_results = [] # Liste de (freq, mag, phase)
+
         from PyQt6.QtCore import QTimer
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plot)
@@ -220,6 +307,12 @@ class OscilloscopeApp(QObject):
         self.ui.btn_clear_xy.clicked.connect(lambda: self.ui.curve_xy.setData([], []))
         self.ui.btn_run_ohm.clicked.connect(self.toggle_ohmmeter)
         self.ui.combo_ohm_range.currentIndexChanged.connect(self.update_ohmmeter_instructions)
+        
+        # Connexions Bode
+        self.ui.btn_start_bode.clicked.connect(self.start_bode_sweep)
+        self.ui.btn_stop_bode.clicked.connect(self.stop_bode_sweep)
+        self.ui.btn_export_bode_csv.clicked.connect(self.export_bode_csv)
+        self.ui.btn_export_bode_png.clicked.connect(self.export_bode_png)
         
         # Connexions Analyse Graphe
         self.ui.action_v_cursors.triggered.connect(self.toggle_v_cursors)
@@ -2069,6 +2162,181 @@ oLink.Save
         except Exception as e:
             self.ui.lbl_math_status.setText(f"❌ {e}")
             self.ui.lbl_math_status.setStyleSheet("color: #d9534f; font-size: 11px; padding: 4px;")
+
+    # =============================================
+    # ========= BODE PLOT LOGIC ===================
+    # =============================================
+
+    def start_bode_sweep(self):
+        if not self.controller.ctx:
+            QMessageBox.warning(self.ui, "Erreur", "Veuillez connecter l'ADALM2000 avant de lancer un balayage.")
+            return
+            
+        # 1. Préparer l'UI
+        self.ui.btn_start_bode.setEnabled(False)
+        self.ui.btn_stop_bode.setEnabled(True)
+        self.ui.bode_progress.setVisible(True)
+        self.ui.bode_progress.setValue(0)
+        
+        # Effacer les courbes
+        self.ui.curve_bode_mag.setData([], [])
+        self.ui.curve_bode_phase.setData([], [])
+        self.bode_results = []
+        
+        # 2. Stopper l'acquisition temps-réel pour avoir le contrôle exclusif du hardware
+        self.is_running = False
+        self.ui.btn_run_stop.setChecked(True)
+        self.ui.btn_run_stop.setText("Balayage Bode en cours...")
+        self.ui.btn_run_stop.setStyleSheet("background-color: #f0ad4e; color: white; font-weight: bold; padding: 10px;")
+        
+        # 3. Lancer le thread
+        start_f = self.ui.spin_bode_start.value()
+        stop_f = self.ui.spin_bode_stop.value()
+        pts_decade = self.ui.spin_bode_pts.value()
+        amp = self.ui.spin_bode_amp.value()
+        
+        self.bode_thread = BodeSweepThread(self.controller, start_f, stop_f, pts_decade, amp)
+        self.bode_thread.point_finished.connect(self.on_bode_point)
+        self.bode_thread.progress.connect(self.ui.bode_progress.setValue)
+        self.bode_thread.finished.connect(self.on_bode_finished)
+        self.bode_thread.start()
+
+    def on_bode_point(self, freq, mag, phase):
+        self.bode_results.append((freq, mag, phase))
+        # Trier par fréquence pour un tracé propre
+        self.bode_results.sort(key=lambda x: x[0])
+        
+        freqs = [x[0] for x in self.bode_results]
+        mags = [x[1] for x in self.bode_results]
+        phases = [x[2] for x in self.bode_results]
+        
+        self.ui.curve_bode_mag.setData(freqs, mags)
+        self.ui.curve_bode_phase.setData(freqs, phases)
+
+    def on_bode_finished(self):
+        self.ui.btn_start_bode.setEnabled(True)
+        self.ui.btn_stop_bode.setEnabled(False)
+        self.ui.bode_progress.setVisible(False)
+        
+        self.ui.btn_run_stop.setText("Balayage Terminé (Pause)")
+        print("Balayage Bode terminé.")
+
+    def stop_bode_sweep(self):
+        if self.bode_thread and self.bode_thread.isRunning():
+            self.bode_thread.stop()
+            self.bode_thread.wait()
+        self.on_bode_finished()
+
+    def export_bode_csv(self):
+        if not self.bode_results:
+            QMessageBox.information(self.ui, "Infos", "Aucun résultat à exporter. Lancez un balayage d'abord.")
+            return
+            
+        file_path, _ = QFileDialog.getSaveFileName(self.ui, "Exporter Bode", "bode_data.csv", "CSV Files (*.csv)")
+        if file_path:
+            try:
+                with open(file_path, 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Frequency (Hz)", "Gain (dB)", "Phase (deg)"])
+                    for f_val, m, p in self.bode_results:
+                        writer.writerow([f"{f_val:.2f}", f"{m:.4f}", f"{p:.4f}"])
+                QMessageBox.information(self.ui, "Succès", f"Données exportées : {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self.ui, "Erreur", f"Échec de l'exportation : {e}")
+
+    def export_bode_png(self):
+        # 1. Demander les réglages
+        dialog = QDialog(self.ui)
+        dialog.setWindowTitle("Configuration Export PNG Bode")
+        l = QVBoxLayout(dialog)
+        f = QFormLayout()
+        
+        edit_title = QLineEdit("Diagramme de Bode")
+        btn_bg = QPushButton("Couleur de Fond")
+        btn_mag = QPushButton("Couleur Magnitude")
+        btn_phase = QPushButton("Couleur Phase")
+        
+        self._temp_bode_bg = "#ffffff"
+        self._temp_bode_mag = "#0077bb"
+        self._temp_bode_phase = "#ee7733"
+        
+        def pick_bg():
+            c = QColorDialog.getColor()
+            if c.isValid(): self._temp_bode_bg = c.name(); btn_bg.setStyleSheet(f"background: {c.name()};")
+        def pick_mag():
+            c = QColorDialog.getColor()
+            if c.isValid(): self._temp_bode_mag = c.name(); btn_mag.setStyleSheet(f"background: {c.name()};")
+        def pick_phase():
+            c = QColorDialog.getColor()
+            if c.isValid(): self._temp_bode_phase = c.name(); btn_phase.setStyleSheet(f"background: {c.name()};")
+            
+        btn_bg.clicked.connect(pick_bg)
+        btn_mag.clicked.connect(pick_mag)
+        btn_phase.clicked.connect(pick_phase)
+        
+        f.addRow("Titre :", edit_title)
+        f.addRow("Fond :", btn_bg)
+        f.addRow("Courbe Mag :", btn_mag)
+        f.addRow("Courbe Phase :", btn_phase)
+        l.addLayout(f)
+        
+        bbox = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bbox.accepted.connect(dialog.accept)
+        bbox.rejected.connect(dialog.reject)
+        l.addWidget(bbox)
+        
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+            
+        file_path, _ = QFileDialog.getSaveFileName(self.ui, "Exporter PNG", "bode_plot.png", "Images PNG (*.png)")
+        if not file_path: return
+
+        # 2. Appliquer temporairement les styles
+        old_bg_mag = self.ui.bode_mag_plot.backgroundBrush()
+        old_bg_phase = self.ui.bode_phase_plot.backgroundBrush()
+        old_pen_mag = self.ui.curve_bode_mag.opts['pen']
+        old_pen_phase = self.ui.curve_bode_phase.opts['pen']
+        
+        try:
+            # On change le fond et les courbes
+            self.ui.bode_mag_plot.setBackground(self._temp_bode_bg)
+            self.ui.bode_phase_plot.setBackground(self._temp_bode_bg)
+            self.ui.curve_bode_mag.setPen(pg.mkPen(self._temp_bode_mag, width=2))
+            self.ui.curve_bode_phase.setPen(pg.mkPen(self._temp_bode_phase, width=2))
+            
+            # Ajuster les axes si fond clair
+            is_light = self._temp_bode_bg.lower() in ['#ffffff', 'white']
+            for p in [self.ui.bode_mag_plot, self.ui.bode_phase_plot]:
+                for ax in ['left', 'bottom']:
+                    p.getAxis(ax).setPen('k' if is_light else 'w')
+                    p.getAxis(ax).setTextPen('k' if is_light else 'w')
+
+            # 3. Exporter
+            # On exporte le splitter entier ou les deux plots ?
+            # Pour faire simple, on exporte le widget parent du layout ou on capture l'image du widget
+            # pyqtgraph ImageExporter travaille sur un PlotItem.
+            # On va exporter les deux séparément ou utiliser QWidget.grab()
+            
+            self.app.processEvents()
+            # Capture de l'ensemble des deux plots (le widget parent layout)
+            # On va essayer de capturer le splitter
+            pixmap = self.ui.bode_mag_plot.parent().grab() # Le QSplitter
+            pixmap.save(file_path)
+            
+            QMessageBox.information(self.ui, "Succès", f"Graphique exporté : {file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self.ui, "Erreur", f"Échec export PNG : {e}")
+            
+        # 4. Restaurer
+        self.ui.bode_mag_plot.setBackground('k')
+        self.ui.bode_phase_plot.setBackground('k')
+        self.ui.curve_bode_mag.setPen(old_pen_mag)
+        self.ui.curve_bode_phase.setPen(old_pen_phase)
+        for p in [self.ui.bode_mag_plot, self.ui.bode_phase_plot]:
+            for ax in ['left', 'bottom']:
+                p.getAxis(ax).setPen('w')
+                p.getAxis(ax).setTextPen('w')
 
 def _check_and_install_libm2k():
     """Vérifie si libm2k est installé, propose l'installation automatique sinon."""

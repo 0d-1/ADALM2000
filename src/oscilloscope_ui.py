@@ -6,7 +6,7 @@ import pyqtgraph as pg
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
                              QPushButton, QLabel, QGroupBox, QDoubleSpinBox, QTabWidget, QCheckBox, 
                              QScrollArea, QComboBox, QSplitter, QToolButton, QMenu, QLineEdit,
-                             QTextEdit, QFrame)
+                             QTextEdit, QFrame, QProgressBar)
 from PyQt6.QtGui import QAction, QFont
 from PyQt6.QtCore import Qt, QPoint
 
@@ -188,6 +188,7 @@ class OscilloscopeUI(QWidget):
         self.tab_spectrum = QWidget()
         self.tab_xy = QWidget()
         self.tab_math = QWidget()
+        self.tab_bode = QWidget()
         self.tab_voltmeter = QWidget()
         self.tab_multimeter = QWidget()
         self.tab_logger = QWidget()
@@ -212,6 +213,7 @@ class OscilloscopeUI(QWidget):
         self.sub_tabs_analysis.addTab(self.tab_spectrum, "Spectre FFT")
         self.sub_tabs_analysis.addTab(self.tab_xy, "Vue XY")
         self.sub_tabs_analysis.addTab(self.tab_math, "Math & Réf")
+        self.sub_tabs_analysis.addTab(self.tab_bode, "Analyse Bode")
         self.tabs.addTab(self.sub_tabs_analysis, "📊 Analyse")
         
         # --- Catégorie 4 : Instruments (2 sous-onglets) ---
@@ -231,6 +233,7 @@ class OscilloscopeUI(QWidget):
         self.setup_spectrum_tab()
         self.setup_xy_tab()
         self.setup_math_tab()
+        self.setup_bode_tab()
         self.setup_voltmeter_tab()
         self.setup_multimeter_tab()
         self.setup_logger_tab()
@@ -1599,17 +1602,14 @@ class OscilloscopeUI(QWidget):
         # --- Guide de Câblage ---
         group_wires = QGroupBox("📌 Instructions de Câblage")
         l_wires = QVBoxLayout()
-        self.lbl_ohm_instr = QLabel(
-            "<b>Mode Basse Résistance :</b><br>"
-            "• <b>W1 (Jaune)</b> et <b>1+ (Orange)</b> sur un côté.<br>"
-            "• <b>GND (Noir)</b> sur l'autre côté.<br><br>"
-            "<b>Mode Haute Résistance (> 50kΩ) :</b><br>"
-            "• <b>W1 (Jaune)</b> sur un côté.<br>"
-            "• <b>1+ (Orange)</b> sur l'autre côté.<br>"
-            "• <b>1- (Bleu/Blanc)</b> relié au <b>GND (Noir)</b>."
+        lbl_msg = QLabel(
+            "1. Reliez <b>W1</b> à l'entrée de votre circuit.<br>"
+            "2. Reliez <b>1+</b> à l'entrée (Référence).<br>"
+            "3. Reliez <b>2+</b> à la sortie du circuit.<br>"
+            "4. Reliez toutes les masses (GND, 1-, 2-) ensemble."
         )
-        self.lbl_ohm_instr.setStyleSheet("color: #aaa; font-size: 11px;")
-        l_wires.addWidget(self.lbl_ohm_instr)
+        lbl_msg.setStyleSheet("font-size: 11px; color: #aaa;")
+        l_wires.addWidget(lbl_msg)
         group_wires.setLayout(l_wires)
         l_content.addWidget(group_wires)
         
@@ -1618,3 +1618,108 @@ class OscilloscopeUI(QWidget):
         l_main = QVBoxLayout(self.tab_multimeter)
         l_main.setContentsMargins(0, 0, 0, 0)
         l_main.addWidget(scroll_area)
+
+    def setup_bode_tab(self):
+        layout = QVBoxLayout(self.tab_bode)
+        
+        # --- Graphiques de Bode ---
+        self.bode_mag_plot = pg.PlotWidget(title="Diagramme de Bode - Magnitude")
+        self.bode_mag_plot.setLabel('left', 'Gain', units='dB')
+        self.bode_mag_plot.setLabel('bottom', 'Fréquence', units='Hz')
+        self.bode_mag_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.bode_mag_plot.setLogMode(x=True, y=False)
+        self.curve_bode_mag = self.bode_mag_plot.plot(pen=pg.mkPen('#5bc0de', width=2), symbol='o', symbolSize=5)
+        
+        self.bode_phase_plot = pg.PlotWidget(title="Diagramme de Bode - Phase")
+        self.bode_phase_plot.setLabel('left', 'Phase', units='°')
+        self.bode_phase_plot.setLabel('bottom', 'Fréquence', units='Hz')
+        self.bode_phase_plot.showGrid(x=True, y=True, alpha=0.3)
+        self.bode_phase_plot.setLogMode(x=True, y=False)
+        self.curve_bode_phase = self.bode_phase_plot.plot(pen=pg.mkPen('#f0ad4e', width=2), symbol='o', symbolSize=5)
+        
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(self.bode_mag_plot)
+        splitter.addWidget(self.bode_phase_plot)
+        layout.addWidget(splitter, stretch=4)
+        
+        # --- Contrôles de Balayage ---
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.Shape.NoFrame)
+        content_widget = QWidget()
+        l_controls = QVBoxLayout(content_widget)
+        
+        group_sweep = QGroupBox("Paramètres du Balayage")
+        l_sweep = QVBoxLayout()
+        
+        h_freq = QHBoxLayout()
+        h_freq.addWidget(QLabel("Fréq. Début (Hz) :"))
+        self.spin_bode_start = QDoubleSpinBox()
+        self.spin_bode_start.setRange(1.0, 100000.0)
+        self.spin_bode_start.setValue(10.0)
+        # self.spin_bode_start.setLogStep(True) # Pas dispo sur toutes les versions de Qt
+        h_freq.addWidget(self.spin_bode_start)
+        
+        h_freq.addWidget(QLabel("Fin (Hz) :"))
+        self.spin_bode_stop = QDoubleSpinBox()
+        self.spin_bode_stop.setRange(10.0, 200000.0)
+        self.spin_bode_stop.setValue(20000.0)
+        h_freq.addWidget(self.spin_bode_stop)
+        l_sweep.addLayout(h_freq)
+        
+        h_pts = QHBoxLayout()
+        h_pts.addWidget(QLabel("Points / décade :"))
+        self.spin_bode_pts = QDoubleSpinBox()
+        self.spin_bode_pts.setRange(1.0, 100.0)
+        self.spin_bode_pts.setValue(10.0)
+        self.spin_bode_pts.setDecimals(0)
+        h_pts.addWidget(self.spin_bode_pts)
+        
+        h_pts.addWidget(QLabel("Amplitude (V) :"))
+        self.spin_bode_amp = QDoubleSpinBox()
+        self.spin_bode_amp.setRange(0.1, 5.0)
+        self.spin_bode_amp.setValue(2.0)
+        h_pts.addWidget(self.spin_bode_amp)
+        l_sweep.addLayout(h_pts)
+        
+        self.btn_start_bode = QPushButton("🚀 DÉMARRER LE BALAYAGE")
+        self.btn_start_bode.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")
+        l_sweep.addWidget(self.btn_start_bode)
+        
+        self.btn_stop_bode = QPushButton("⏹ ARRÊTER")
+        self.btn_stop_bode.setStyleSheet("background-color: #d9534f; color: white; font-weight: bold; padding: 10px;")
+        self.btn_stop_bode.setEnabled(False)
+        l_sweep.addWidget(self.btn_stop_bode)
+        
+        self.bode_progress = QProgressBar()
+        self.bode_progress.setVisible(False)
+        l_sweep.addWidget(self.bode_progress)
+        
+        self.btn_export_bode_csv = QPushButton("💾 Exporter Résultats (CSV)")
+        self.btn_export_bode_csv.setStyleSheet("background-color: #f0ad4e; color: white; font-weight: bold;")
+        l_sweep.addWidget(self.btn_export_bode_csv)
+        
+        self.btn_export_bode_png = QPushButton("🖼️ Exporter Graphique (PNG)")
+        self.btn_export_bode_png.setStyleSheet("background-color: #5bc0de; color: white; font-weight: bold;")
+        l_sweep.addWidget(self.btn_export_bode_png)
+        
+        group_sweep.setLayout(l_sweep)
+        l_controls.addWidget(group_sweep)
+        
+        # Guide de câblage Bode
+        group_guide = QGroupBox("📌 Guide de Câblage")
+        l_guide = QVBoxLayout()
+        lbl_guide = QLabel(
+            "<b>1.</b> Reliez <b>W1</b> à l'entrée du filtre.<br>"
+            "<b>2.</b> Reliez <b>1+</b> à l'entrée (Référence).<br>"
+            "<b>3.</b> Reliez <b>2+</b> à la sortie du filtre.<br>"
+            "<b>Note :</b> Assurez-vous que toutes les masses (GND) sont reliées."
+        )
+        lbl_guide.setStyleSheet("font-size: 11px; color: #5bc0de;")
+        l_guide.addWidget(lbl_guide)
+        group_guide.setLayout(l_guide)
+        l_controls.addWidget(group_guide)
+        
+        l_controls.addStretch(1)
+        scroll_area.setWidget(content_widget)
+        layout.addWidget(scroll_area, stretch=1)
