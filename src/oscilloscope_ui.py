@@ -1655,14 +1655,16 @@ class OscilloscopeUI(QWidget):
         h_freq = QHBoxLayout()
         h_freq.addWidget(QLabel("Fréq. Début (Hz) :"))
         self.spin_bode_start = QDoubleSpinBox()
-        self.spin_bode_start.setRange(1.0, 100000.0)
+        self.spin_bode_start.setRange(0.01, 100000.0)
+        self.spin_bode_start.setDecimals(3)
+        self.spin_bode_start.setSingleStep(0.01)
         self.spin_bode_start.setValue(10.0)
-        # self.spin_bode_start.setLogStep(True) # Pas dispo sur toutes les versions de Qt
         h_freq.addWidget(self.spin_bode_start)
         
         h_freq.addWidget(QLabel("Fin (Hz) :"))
         self.spin_bode_stop = QDoubleSpinBox()
-        self.spin_bode_stop.setRange(10.0, 200000.0)
+        self.spin_bode_stop.setRange(0.01, 200000.0)
+        self.spin_bode_stop.setDecimals(3)
         self.spin_bode_stop.setValue(20000.0)
         h_freq.addWidget(self.spin_bode_stop)
         l_sweep.addLayout(h_freq)
@@ -1681,6 +1683,16 @@ class OscilloscopeUI(QWidget):
         self.spin_bode_amp.setValue(2.0)
         h_pts.addWidget(self.spin_bode_amp)
         l_sweep.addLayout(h_pts)
+        
+        # Label estimation dynamique du temps
+        self.lbl_bode_estimate = QLabel("⏱ Durée estimée : --")
+        self.lbl_bode_estimate.setStyleSheet(
+            "color: #5bc0de; font-size: 11px; font-weight: bold; "
+            "background-color: #1a1a2e; border: 1px solid #333; "
+            "border-radius: 4px; padding: 5px;"
+        )
+        self.lbl_bode_estimate.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        l_sweep.addWidget(self.lbl_bode_estimate)
         
         self.btn_start_bode = QPushButton("🚀 DÉMARRER LE BALAYAGE")
         self.btn_start_bode.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")

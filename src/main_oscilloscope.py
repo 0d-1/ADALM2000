@@ -154,7 +154,7 @@ class ExportSettingsDialog(QDialog):
         }
 
 class OscilloscopeApp(QObject):
-    VERSION = "2.3.0"
+    VERSION = "2.3.1"
 
     def __init__(self): 
         super().__init__()
@@ -313,6 +313,11 @@ class OscilloscopeApp(QObject):
         self.ui.btn_stop_bode.clicked.connect(self.stop_bode_sweep)
         self.ui.btn_export_bode_csv.clicked.connect(self.export_bode_csv)
         self.ui.btn_export_bode_png.clicked.connect(self.export_bode_png)
+        # Estimation dynamique : mise à jour à chaque changement de paramètre
+        self.ui.spin_bode_start.valueChanged.connect(self.update_bode_estimate)
+        self.ui.spin_bode_stop.valueChanged.connect(self.update_bode_estimate)
+        self.ui.spin_bode_pts.valueChanged.connect(self.update_bode_estimate)
+        self.update_bode_estimate()  # Calcul initial
         
         # Connexions Analyse Graphe
         self.ui.action_v_cursors.triggered.connect(self.toggle_v_cursors)
@@ -2167,6 +2172,42 @@ oLink.Save
     # ========= BODE PLOT LOGIC ===================
     # =============================================
 
+    def update_bode_estimate(self):
+        """Calcule et affiche le temps de balayage estimé selon les paramètres actuels."""
+        start_f = self.ui.spin_bode_start.value()
+        stop_f  = self.ui.spin_bode_stop.value()
+        pts     = self.ui.spin_bode_pts.value()
+
+        if start_f <= 0 or stop_f <= start_f:
+            self.ui.lbl_bode_estimate.setText("⏱ Durée estimée : paramètres invalides")
+            return
+
+        sr = self.controller.sample_rate if self.controller.sample_rate > 0 else 100_000
+
+        decades = np.log10(stop_f) - np.log10(start_f)
+        num_points = max(2, int(decades * pts) + 1)
+        freqs = np.logspace(np.log10(start_f), np.log10(stop_f), num_points)
+
+        total_s = 0.0
+        for f in freqs:
+            # Miroir exact de la logique du BodeSweepThread
+            wait_time   = min(0.2, max(0.05, 2.0 / f))
+            samples_acq = min(int(max((sr / f) * 10, 1024)), 100_000)
+            acq_time    = samples_acq / sr
+            total_s    += wait_time + acq_time
+
+        # Formatage lisible
+        if total_s < 60:
+            t_str = f"{total_s:.0f} s"
+        elif total_s < 3600:
+            t_str = f"{int(total_s // 60)}m {int(total_s % 60):02d}s"
+        else:
+            t_str = f"{int(total_s // 3600)}h {int((total_s % 3600) // 60):02d}m"
+
+        self.ui.lbl_bode_estimate.setText(
+            f"⏱ Durée estimée : ~{t_str}  —  {num_points} points"
+        )
+
     def start_bode_sweep(self):
         if not self.controller.ctx:
             QMessageBox.warning(self.ui, "Erreur", "Veuillez connecter l'ADALM2000 avant de lancer un balayage.")
@@ -2217,9 +2258,13 @@ oLink.Save
         self.ui.btn_start_bode.setEnabled(True)
         self.ui.btn_stop_bode.setEnabled(False)
         self.ui.bode_progress.setVisible(False)
-        
-        self.ui.btn_run_stop.setText("Balayage Terminé (Pause)")
         print("Balayage Bode terminé.")
+
+        # Relancer automatiquement l'acquisition temps-réel
+        self.is_running = True
+        self.ui.btn_run_stop.setChecked(False)
+        self.ui.btn_run_stop.setText("En cours (Cliquer pour mettre en Pause)")
+        self.ui.btn_run_stop.setStyleSheet("background-color: #5cb85c; color: white; font-weight: bold; padding: 10px;")
 
     def stop_bode_sweep(self):
         if self.bode_thread and self.bode_thread.isRunning():
